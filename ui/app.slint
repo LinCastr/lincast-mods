@@ -580,6 +580,14 @@ component ModRow inherits Rectangle {
                 deps-ta := TouchArea {
                     mouse-cursor: pointer;
                     clicked => { root.get-deps(); }
+                    // Right click here still opens the row's menu.
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                            root.menu-x = self.absolute-position.x - root.absolute-position.x + self.mouse-x;
+                            root.menu-y = self.absolute-position.y - root.absolute-position.y + self.mouse-y;
+                            menu.show();
+                        }
+                    }
                 }
             }
             Rectangle { horizontal-stretch: 1; }
