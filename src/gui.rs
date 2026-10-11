@@ -2,7 +2,7 @@
 
 use crate::games::{self, Game};
 use crate::{config, desktop, install, ipc, log, mods, nexus, steam, theme};
-use slint::{ComponentHandle, Image, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
@@ -146,7 +146,6 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     ui.set_logo(load_image(steam::art(g.steam.appid, "logo.png")));
     ui.set_filter(SharedString::new());
     ui.set_filter_mode(0);
-    ui.set_message(SharedString::new());
     refresh_mods(ui, state);
     check_updates(ui, state, appid);
     let mut cfg = config::load();
@@ -243,17 +242,92 @@ fn open(target: &str) {
     }
 }
 
-fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
-    ui.set_message_sticky(false);
-    ui.set_message_error(err);
-    ui.set_message(msg.into());
+/// Avisos do app: pilha no canto (cada um some em 2,5 s) e histórico no sino.
+struct Notes {
+    toasts: Rc<VecModel<Notice>>,
+    history: Rc<VecModel<Notice>>,
+    /// Hora (segundos) de cada aviso do histórico, para o "há 3 min".
+    stamps: Vec<u64>,
+    next: i32,
+    unseen: i32,
 }
 
-/// Mensagem de andamento: fica no canto até a próxima.
+thread_local! {
+    static NOTES: RefCell<Option<Notes>> = const { RefCell::new(None) };
+}
+
+const TOAST_MS: u64 = 2500;
+const HISTORY_MAX: usize = 50;
+
+fn notes_init(ui: &AppWindow) {
+    let n = Notes {
+        toasts: Rc::new(VecModel::default()),
+        history: Rc::new(VecModel::default()),
+        stamps: Vec::new(),
+        next: 1,
+        unseen: 0,
+    };
+    ui.set_toasts(ModelRc::from(n.toasts.clone()));
+    ui.set_notices(ModelRc::from(n.history.clone()));
+    NOTES.with(|c| *c.borrow_mut() = Some(n));
+}
+
+fn ago(t: u64) -> String {
+    let d = crate::records::now().saturating_sub(t);
+    match d {
+        0..=59 => "agora".into(),
+        60..=3599 => format!("há {} min", d / 60),
+        3600..=86399 => format!("há {} h", d / 3600),
+        _ => format!("há {} dias", d / 86400),
+    }
+}
+
+fn remove_toast(id: i32) {
+    NOTES.with(|c| {
+        if let Some(n) = c.borrow().as_ref() {
+            if let Some(i) = (0..n.toasts.row_count()).find(|&i| n.toasts.row_data(i).is_some_and(|t| t.id == id)) {
+                n.toasts.remove(i);
+            }
+        }
+    });
+}
+
+/// Aviso: entra na pilha (some em 2,5 s) e no histórico. Mensagem vazia só limpa o
+/// andamento.
+fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
+    let msg: SharedString = msg.into();
+    ui.set_progress(SharedString::new());
+    if msg.is_empty() {
+        return;
+    }
+    let open = ui.get_panel_open();
+    let id = NOTES.with(|c| {
+        let mut c = c.borrow_mut();
+        let n = c.as_mut()?;
+        let id = n.next;
+        n.next += 1;
+        let notice = Notice { id, text: msg.clone(), error: err, when: "agora".into() };
+        n.toasts.push(notice.clone());
+        n.history.insert(0, notice);
+        n.stamps.insert(0, crate::records::now());
+        if n.history.row_count() > HISTORY_MAX {
+            n.history.remove(HISTORY_MAX);
+            n.stamps.truncate(HISTORY_MAX);
+        }
+        if !open {
+            n.unseen += 1;
+        }
+        Some((id, n.unseen))
+    });
+    if let Some((id, unseen)) = id {
+        ui.set_unseen(unseen);
+        slint::Timer::single_shot(std::time::Duration::from_millis(TOAST_MS), move || remove_toast(id));
+    }
+}
+
+/// Andamento (download, instalação): fica no topo da pilha até o próximo aviso.
 fn set_progress(ui: &AppWindow, msg: impl Into<SharedString>) {
-    ui.set_message_sticky(true);
-    ui.set_message_error(false);
-    ui.set_message(msg.into());
+    ui.set_progress(msg.into());
 }
 
 /// Notificação do sistema, só para o que chega de fora da janela (clique no site):
@@ -385,7 +459,13 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         ui.invoke_show_settings();
     }
     if let Ok(m) = std::env::var("LINEX_MESSAGE") {
-        set_progress(ui, m);
+        for (i, part) in m.split('|').enumerate() {
+            set_msg(ui, part.to_string(), i == 1);
+        }
+    }
+    if std::env::var("LINEX_PANEL").as_deref() == Ok("1") {
+        ui.set_panel_open(true);
+        ui.invoke_open_panel();
     }
     let weak = ui.as_weak();
     slint::Timer::single_shot(std::time::Duration::from_millis(1800), move || {
@@ -419,6 +499,34 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     }));
 
     apply_theme(&ui);
+    notes_init(&ui);
+    {
+        let weak = ui.as_weak();
+        ui.on_open_panel(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            NOTES.with(|c| {
+                if let Some(n) = c.borrow_mut().as_mut() {
+                    n.unseen = 0;
+                    for (i, t) in n.stamps.iter().enumerate() {
+                        if let Some(mut row) = n.history.row_data(i) {
+                            row.when = ago(*t).into();
+                            n.history.set_row_data(i, row);
+                        }
+                    }
+                }
+            });
+            ui.set_unseen(0);
+        });
+    }
+    ui.on_clear_notices(|| {
+        NOTES.with(|c| {
+            if let Some(n) = c.borrow_mut().as_mut() {
+                n.history.clear();
+                n.stamps.clear();
+            }
+        });
+    });
+    ui.on_dismiss_toast(remove_toast);
     ui.set_games(ModelRc::new(VecModel::from(game_items(&state.borrow().games))));
 
     {
@@ -549,7 +657,6 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         let weak = ui.as_weak();
         ui.on_show_settings(move || {
             if let Some(ui) = weak.upgrade() {
-                set_msg(&ui, "", false);
                 refresh_nexus_status(&ui);
             }
         });
