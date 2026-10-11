@@ -85,7 +85,8 @@ translations from `lang/`). The release profile uses LTO, so it takes ~2.5 min.
 | `src/ipc.rs` | Single instance: a second launch with an `nxm://` URL hands it over a Unix socket. |
 | `src/i18n.rs` | `tr!("English", "Português")` for Rust strings; Slint uses `@tr()` + `lang/pt_BR/.../linex-mods.po`. |
 | `src/theme.rs` | Default dark palette or colors from wallust/pywal `colors.json`. |
-| `docs/pesquisa-amethyst.md` | Research notes on Amethyst Mod Manager (how Nexus/loaders behave on Linux). |
+| `tests/cli.rs` | End-to-end CLI tests against a fake Steam library in a temporary HOME. |
+| `docs/amethyst-research.md` | Research notes on Amethyst Mod Manager (how Nexus/loaders behave on Linux). |
 
 ## Rules learned the hard way
 
@@ -117,13 +118,18 @@ CLI tests. In a cloud session there is no display and no Steam: limit yourself t
 Done: games/loader detection, install/enable/disable/remove with records, Nexus
 "Mod Manager Download" (nxm), notifications + bell, wallust theme, loader installer,
 drag & drop, mod icons, English UI + pt_BR, right-click menu, properties, sort, update check.
+Code comments are all in English. CI (`.github/workflows/ci.yml`) runs
+`cargo clippy --all-targets -- -D warnings` and `cargo test`: keep both clean.
+
+Security audit done (2026-10-11): archive symlinks/FIFOs skipped, archive names and record
+paths that escape the game folder rejected, nxm links validated, the one-time key redacted
+from error messages, IPC sockets owned and 0600, key file forced to 0600.
 
 Not yet tested by the user with the mouse: right-click menu, real drag & drop, dragging
 the scrollbar, loader install on a real game, copying the launch option.
 
 Next / open:
 - Thunderstore support (download + install packages, r2modman-style). Not started.
-- Translate the remaining Portuguese code comments to English.
 - Rewriting the first ~15 Portuguese commit messages needs a force push to the public
   repo: only with the user's explicit OK.
 - No GitHub releases yet (user's choice). Don't create one.
