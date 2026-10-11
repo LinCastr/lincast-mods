@@ -16,7 +16,12 @@ done for you.
 - Installs `.zip` archives (and `.7z`/`.rar` through `7z` or `bsdtar`), putting each file in
   the right folder for the loader. Reinstalling a mod keeps its `config.json`.
 - Turns mods on and off without deleting them (moved to `.linex-disabled/` inside the game).
-- Its own window (dark, minimal), with the game art from Steam's cache.
+- Its own window (dark, minimal), with the game icon and art from Steam's cache. Mods in
+  columns (name, author, version), search and an on/off filter.
+- Optional colors from your wallpaper (wallust/pywal palette), updated when it changes.
+- Checks the Nexus for newer versions of mods you got from there.
+- Warns when a mod was built for another loader (a MelonLoader mod in a BepInEx game).
+- Tells you when Proton will ignore the loader DLL and copies the launch option for you.
 - Remembers which files each mod installed, so removing a mod sends all of it to the trash
   (shared libraries stay while another mod still uses them).
 - Nexus "Mod Manager Download" button (`nxm://` links), free accounts included. The API key
@@ -25,7 +30,8 @@ done for you.
 
 ## Planned
 
-- Warning and fix for the Proton DLL override that MelonLoader/BepInEx need.
+- Installing the loader itself (MelonLoader/BepInEx) from the app.
+- English interface.
 - Thunderstore support.
 
 Run `linex-mods` with no arguments to open the window.

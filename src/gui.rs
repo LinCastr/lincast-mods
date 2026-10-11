@@ -13,6 +13,9 @@ slint::include_modules!();
 struct State {
     games: Vec<Game>,
     current: Option<usize>,
+    /// Versões novas no Nexus: (appid, mod_id) → versão. Checado uma vez por jogo.
+    updates: std::collections::HashMap<(u32, u64), String>,
+    checked: std::collections::HashSet<u32>,
 }
 
 impl State {
@@ -98,13 +101,23 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
             2 => !m.enabled,
             _ => true,
         })
-        .map(|m| ModItem {
-            id: m.id.into(),
-            name: m.name.into(),
-            author: m.author.unwrap_or_default().into(),
-            version: m.version.unwrap_or_default().into(),
-            source: if m.from_nexus { "Nexus".into() } else { SharedString::new() },
-            enabled: m.enabled,
+        .map(|m| {
+            let update = m
+                .nexus
+                .as_ref()
+                .and_then(|n| state.updates.get(&(g.steam.appid, n.mod_id)))
+                .cloned()
+                .unwrap_or_default();
+            ModItem {
+                page: m.nexus.as_ref().map(|n| nexus::mod_page(&n.domain, n.mod_id)).unwrap_or_default().into(),
+                id: m.id.into(),
+                name: m.name.into(),
+                author: m.author.unwrap_or_default().into(),
+                version: m.version.unwrap_or_else(|| "—".into()).into(),
+                source: if m.from_nexus { "Nexus".into() } else { SharedString::new() },
+                update: update.into(),
+                enabled: m.enabled,
+            }
         })
         .collect();
     let counts = if !q.is_empty() || mode != 0 {
@@ -135,11 +148,41 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     ui.set_filter_mode(0);
     ui.set_message(SharedString::new());
     refresh_mods(ui, state);
+    check_updates(ui, state, appid);
     let mut cfg = config::load();
     if cfg.last_game != Some(appid) {
         cfg.last_game = Some(appid);
         config::save(&cfg);
     }
+}
+
+/// Pergunta ao Nexus a versão atual dos mods baixados por lá (uma vez por jogo
+/// por sessão, fora da thread da janela). Sem chave, não faz nada.
+fn check_updates(ui: &AppWindow, state: &mut State, appid: u32) {
+    if !state.checked.insert(appid) {
+        return;
+    }
+    let sources: Vec<_> = crate::records::load(appid).mods.into_iter().filter_map(|r| r.nexus).collect();
+    if sources.is_empty() {
+        return;
+    }
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let Some(key) = nexus::load_key() else { return };
+        let mut found = serde_json::Map::new();
+        for s in sources {
+            let (Some(local), Ok(Some(remote))) = (s.version.as_deref(), nexus::mod_version(&s.domain, s.mod_id, &key)) else {
+                continue;
+            };
+            if nexus::is_newer(&remote, local) {
+                found.insert(s.mod_id.to_string(), remote.into());
+            }
+        }
+        if !found.is_empty() {
+            let json = serde_json::Value::Object(found).to_string();
+            let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_updates_found(appid as i32, json.into()));
+        }
+    });
 }
 
 fn color(c: theme::Rgb) -> slint::Color {
@@ -368,7 +411,12 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     // Só funciona depois da plataforma existir (o AppWindow::new a cria).
     let app_id = std::env::var("LINEX_APP_ID").unwrap_or_else(|_| "linex-mods".into());
     let _ = slint::set_xdg_app_id(app_id);
-    let state = Rc::new(RefCell::new(State { games: games::moddable_games(), current: None }));
+    let state = Rc::new(RefCell::new(State {
+        games: games::moddable_games(),
+        current: None,
+        updates: Default::default(),
+        checked: Default::default(),
+    }));
 
     apply_theme(&ui);
     ui.set_games(ModelRc::new(VecModel::from(game_items(&state.borrow().games))));
@@ -552,6 +600,25 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
     ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
+    ui.on_open_url(|u| open(&u));
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_updates_found(move |appid, json| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            let map: std::collections::HashMap<String, String> = serde_json::from_str(&json).unwrap_or_default();
+            let n = map.len();
+            for (id, v) in map {
+                if let Ok(id) = id.parse() {
+                    st.updates.insert((appid as u32, id), v);
+                }
+            }
+            if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
+                refresh_mods(&ui, &st);
+                set_msg(&ui, if n == 1 { "1 mod tem versão nova no Nexus.".to_string() } else { format!("{n} mods têm versão nova no Nexus.") }, false);
+            }
+        });
+    }
     {
         let weak = ui.as_weak();
         ui.on_copy_fix(move || {

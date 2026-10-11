@@ -16,6 +16,7 @@ pub struct Mod {
     pub enabled: bool,
     /// Instalado pelo botão do Nexus (tem a origem no registro).
     pub from_nexus: bool,
+    pub nexus: Option<records::NexusSource>,
 }
 
 /// "GrowableMoondewNectarMod" → "Growable Moondew Nectar Mod", "SR2_INF" → "SR2 INF".
@@ -151,6 +152,7 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
         author: None,
         enabled,
         from_nexus: false,
+        nexus: None,
     };
     match loader {
         Loader::MelonLoader => {
@@ -203,6 +205,7 @@ pub fn list(game: &Game) -> Vec<Mod> {
         if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
             let r = &recs.mods[i];
             m.from_nexus = r.nexus.is_some();
+            m.nexus = r.nexus.clone();
             if game.loader != Loader::Smapi {
                 m.name = r.name.clone();
             }

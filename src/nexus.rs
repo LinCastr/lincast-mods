@@ -148,6 +148,37 @@ pub fn validate(key: &str) -> Result<(String, bool)> {
     Ok((name, premium))
 }
 
+/// Versão atual do mod no Nexus (a que a página mostra).
+pub fn mod_version(domain: &str, mod_id: u64, key: &str) -> Result<Option<String>> {
+    let v = get_json(&format!("/games/{domain}/mods/{mod_id}.json"), key)?;
+    Ok(v["version"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
+}
+
+pub fn mod_page(domain: &str, mod_id: u64) -> String {
+    format!("https://www.nexusmods.com/{domain}/mods/{mod_id}?tab=files")
+}
+
+/// `remota` é mais nova que `local`? Compara número a número ("1.10" > "1.9");
+/// se não der para comparar assim, qualquer diferença conta.
+pub fn is_newer(remote: &str, local: &str) -> bool {
+    let norm = |s: &str| s.trim().trim_start_matches(['v', 'V']).to_string();
+    let (r, l) = (norm(remote), norm(local));
+    if r == l {
+        return false;
+    }
+    let nums = |s: &str| -> Option<Vec<u64>> {
+        let mut v: Vec<u64> = s.split(['.', '-', '_']).map(|p| p.parse().ok()).collect::<Option<_>>()?;
+        while v.len() > 1 && v.last() == Some(&0) {
+            v.pop();
+        }
+        Some(v)
+    };
+    match (nums(&r), nums(&l)) {
+        (Some(a), Some(b)) => a > b,
+        _ => true,
+    }
+}
+
 pub struct Downloaded {
     pub path: PathBuf,
     pub mod_name: String,
@@ -224,6 +255,15 @@ pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compara_versoes() {
+        assert!(is_newer("1.10", "1.9"));
+        assert!(is_newer("v2.0.1", "2.0"));
+        assert!(!is_newer("1.0.0", "1.0"));
+        assert!(!is_newer("1.2", "1.3"));
+        assert!(is_newer("1.2b", "1.2a"));
+    }
 
     #[test]
     fn le_link_nxm() {
