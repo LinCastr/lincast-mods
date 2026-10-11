@@ -24,8 +24,8 @@ msgstr "Salvar"
 msgid "Get your key at nexusmods.com (Settings → API Keys, at the bottom of the page)"
 msgstr "Gere a chave em nexusmods.com (Configurações → API Keys, no fim da página)"
 
-msgid "Open the Nexus \"Mod Manager Download\" button in linex-mods"
-msgstr "Abrir no linex-mods o botão \"Mod Manager Download\" do Nexus"
+msgid "Open the download buttons of the Nexus (\"Mod Manager Download\") and Thunderstore (\"Install with Mod Manager\") in linex-mods"
+msgstr "Abrir no linex-mods os botões de download do Nexus (\"Mod Manager Download\") e da Thunderstore (\"Install with Mod Manager\")"
 
 msgid "The first time, your browser asks which program opens the link: pick linex-mods."
 msgstr "Na primeira vez, o navegador pergunta qual programa abre o link: escolha o linex-mods."

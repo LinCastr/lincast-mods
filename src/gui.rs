@@ -620,6 +620,58 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     });
 }
 
+/// ror2mm:// link from Thunderstore's "Install with Mod Manager" button. The link doesn't
+/// say which game the package is for: the open game is tried first, then the others,
+/// against Thunderstore's communities. Installs with dependencies, off the UI thread.
+fn handle_thunderstore(ui: &AppWindow, state: &State, url: &str) {
+    let r = match crate::thunderstore::PackageRef::parse(url) {
+        Ok(r) => r,
+        Err(e) => return set_msg(ui, tr!("Thunderstore link: {e:#}", "Link da Thunderstore: {e:#}"), true),
+    };
+    log::line(&format!("received thunderstore {}", r.full_name()));
+    let mut games = state.games.clone();
+    if let Some(i) = state.current {
+        games.swap(0, i);
+    }
+    set_progress(ui, tr!("Looking up {} on Thunderstore…", "Procurando {} na Thunderstore…", r.full_name()));
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let finish = |w: &slint::Weak<AppWindow>, appid: i32, msg: String, err: bool| {
+            log::line(&msg);
+            notify(&if err { tr!("Mod not installed", "Mod não instalado") } else { msg.clone() }, if err { &msg } else { "Thunderstore" }, err);
+            let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_nxm_finished(appid, msg.into(), err));
+        };
+        let Some(game) = crate::thunderstore::game_for(&r, &games) else {
+            return finish(&weak, -1, tr!("{} is not for any of the detected games with BepInEx or MelonLoader.", "{} não é de nenhum dos jogos detectados com BepInEx ou MelonLoader.", r.full_name()), true);
+        };
+        let appid = game.steam.appid as i32;
+        let w2 = weak.clone();
+        let res = crate::thunderstore::install(game, &r, |step| {
+            let txt = tr!("Installing {step}…", "Instalando {step}…");
+            let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
+        });
+        let game_name = &game.steam.name;
+        match res {
+            Ok(recs) => match recs.last() {
+                Some(rec) => {
+                    let deps = recs.len() - 1;
+                    let msg = if deps > 0 {
+                        tr!("Installed in {game_name}: {} (+{deps} dependencies)", "Instalado em {game_name}: {} (+{deps} dependências)", rec.name)
+                    } else {
+                        tr!("Installed in {game_name}: {}", "Instalado em {game_name}: {}", rec.name)
+                    };
+                    match recs.iter().find_map(|r| r.warning.clone()) {
+                        Some(w) => finish(&weak, appid, format!("{msg}. {w}"), true),
+                        None => finish(&weak, appid, msg, false),
+                    }
+                }
+                None => finish(&weak, appid, tr!("Nothing to install: only loader packs.", "Nada para instalar: só pacotes do loader."), false),
+            },
+            Err(e) => finish(&weak, appid, tr!("{}: {e:#}", "{}: {e:#}", r.full_name()), true),
+        }
+    });
+}
+
 /// Nexus key status, read off the UI thread (the keyring can be slow).
 fn refresh_nexus_status(ui: &AppWindow) {
     ui.set_handler_ok(desktop::is_nxm_handler());
@@ -1096,7 +1148,11 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         let weak = ui.as_weak();
         ui.on_nxm_received(move |url| {
             if let Some(ui) = weak.upgrade() {
-                handle_nxm(&ui, &mut state.borrow_mut(), &url);
+                if url.starts_with("ror2mm://") {
+                    handle_thunderstore(&ui, &state.borrow(), &url);
+                } else {
+                    handle_nxm(&ui, &mut state.borrow_mut(), &url);
+                }
             }
         });
     }
@@ -1158,7 +1214,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         ui.on_register_handler(move || {
             let Some(ui) = weak.upgrade() else { return };
             match desktop::register_nxm_handler() {
-                Ok(()) => set_msg(&ui, tr!("Done: the \"Mod Manager Download\" button now opens here.", "Pronto: o botão \"Mod Manager Download\" agora abre aqui."), false),
+                Ok(()) => set_msg(&ui, tr!("Done: the Nexus and Thunderstore download buttons now open here.", "Pronto: os botões de download do Nexus e da Thunderstore agora abrem aqui."), false),
                 Err(e) => set_msg(&ui, tr!("Couldn't register: {e:#}", "Não deu para registrar: {e:#}"), true),
             }
             ui.set_handler_ok(desktop::is_nxm_handler());
@@ -1226,7 +1282,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     {
         let weak = ui.as_weak();
         ipc::listen(move |msg| {
-            if msg.starts_with("nxm://") {
+            if msg.starts_with("nxm://") || msg.starts_with("ror2mm://") {
                 let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_nxm_received(msg.into()));
             }
         });

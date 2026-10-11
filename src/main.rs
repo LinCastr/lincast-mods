@@ -216,7 +216,8 @@ fn updates(g: &games::Game) -> Result<()> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.is_empty() || args[0].starts_with("nxm://") {
+    let is_link = |a: &str| a.starts_with("nxm://") || a.starts_with("ror2mm://");
+    if args.is_empty() || is_link(&args[0]) {
         gui::prefer_x11();
     } else {
         // Error texts from the core follow the language too.
@@ -225,8 +226,11 @@ fn main() {
     let result = match args.as_slice() {
         [] => gui::run(None),
         // "Mod Manager Download" click: hand the link to the open window, or open one.
-        [url] if url.starts_with("nxm://") => {
-            let shown = nexus::NxmLink::parse(url).map(|l| l.redacted()).unwrap_or_else(|_| "invalid nxm://".into());
+        [url] if is_link(url) => {
+            let shown = match url.starts_with("nxm://") {
+                true => nexus::NxmLink::parse(url).map(|l| l.redacted()).unwrap_or_else(|_| "invalid nxm://".into()),
+                false => thunderstore::PackageRef::parse(url).map(|r| format!("ror2mm {}", r.full_name())).unwrap_or_else(|_| "invalid ror2mm://".into()),
+            };
             log::line(&format!("opened by the browser with {shown}"));
             if ipc::send(url) { Ok(()) } else { gui::run(Some(url.clone())) }
         }

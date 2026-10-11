@@ -1,10 +1,13 @@
-//! Applications-menu entry and registration as the nxm:// link handler.
+//! Applications-menu entry and registration as the handler of the websites' "mod manager"
+//! links: nxm:// (Nexus) and ror2mm:// (Thunderstore, the scheme r2modman uses).
 
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::process::Command;
 
 const DESKTOP_ID: &str = "linex-mods.desktop";
+const SCHEMES: [&str; 2] = ["x-scheme-handler/nxm", "x-scheme-handler/ror2mm"];
+const MIME_LINE: &str = "MimeType=x-scheme-handler/nxm;x-scheme-handler/ror2mm;";
 
 fn apps_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_DATA_HOME")
@@ -27,14 +30,16 @@ fn exe_path() -> Result<String> {
     Ok(exe)
 }
 
-/// Is linex-mods already the one opening nxm:// links? Also checks that the entry points
-/// to a program that exists: with a broken Exec, xdg-mime ignores the choice.
+/// Is linex-mods already the one opening both kinds of links? Also checks that the entry
+/// points to a program that exists: with a broken Exec, xdg-mime ignores the choice.
 pub fn is_nxm_handler() -> bool {
-    let chosen = Command::new("xdg-mime")
-        .args(["query", "default", "x-scheme-handler/nxm"])
-        .output()
-        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == DESKTOP_ID);
-    chosen && desktop_exec_ok()
+    let chosen = |scheme: &str| {
+        Command::new("xdg-mime")
+            .args(["query", "default", scheme])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == DESKTOP_ID)
+    };
+    SCHEMES.iter().all(|s| chosen(s)) && desktop_exec_ok()
 }
 
 fn desktop_exec_ok() -> bool {
@@ -67,9 +72,16 @@ pub fn refresh_desktop_file() {
     let file = apps_dir().join(DESKTOP_ID);
     let exists = file.is_file();
     // Entry from an old version (generic icon): swap the icon, keep the rest.
-    if let Ok(txt) = fs::read_to_string(&file)
-        && txt.contains("Icon=applications-games") {
-        let _ = fs::write(&file, txt.replace("Icon=applications-games", "Icon=linex-mods"));
+    // Entry from an older version: generic icon, or only nxm:// links. Patch those lines
+    // and keep the Exec (rewriting it would hand the links to whichever copy is running).
+    if let Ok(txt) = fs::read_to_string(&file) {
+        let new = txt
+            .replace("Icon=applications-games", "Icon=linex-mods")
+            .replace("MimeType=x-scheme-handler/nxm;\n", &format!("{MIME_LINE}\n"));
+        if new != txt {
+            let _ = fs::write(&file, new);
+            let _ = Command::new("update-desktop-database").arg(apps_dir()).status();
+        }
     }
     if (!exists || !desktop_exec_ok())
         && let Ok(exe) = exe_path() {
@@ -95,7 +107,7 @@ fn write_desktop(exe: &str) -> Result<()> {
              Icon=linex-mods\n\
              Terminal=false\n\
              Categories=Game;Utility;\n\
-             MimeType=x-scheme-handler/nxm;\n\
+             {MIME_LINE}\n\
              StartupWMClass=linex-mods\n"
         ),
     )?;
@@ -106,7 +118,9 @@ pub fn register_nxm_handler() -> Result<()> {
     write_desktop(&exe_path()?)?;
     let dir = apps_dir();
     let ok = Command::new("xdg-mime")
-        .args(["default", DESKTOP_ID, "x-scheme-handler/nxm"])
+        .arg("default")
+        .arg(DESKTOP_ID)
+        .args(SCHEMES)
         .status()
         .is_ok_and(|s| s.success());
     let _ = Command::new("update-desktop-database").arg(&dir).status();

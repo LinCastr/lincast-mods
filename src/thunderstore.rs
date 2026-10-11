@@ -193,6 +193,69 @@ pub fn download(p: &Package, mut progress: impl FnMut(u64, u64)) -> Result<PathB
     Ok(path)
 }
 
+/// Thunderstore's game list (the one r2modman uses), cached for a day: maps Steam AppIDs
+/// to communities ("peak", "riskofrain2"...).
+fn schema() -> Option<serde_json::Value> {
+    let p = cache_dir().join("schema.json");
+    let fresh = fs::metadata(&p)
+        .and_then(|m| m.modified())
+        .is_ok_and(|t| t.elapsed().is_ok_and(|e| e.as_secs() < 24 * 3600));
+    if !fresh && let Ok(v) = get("https://thunderstore.io/api/experimental/schema/dev/latest/") {
+        let _ = fs::create_dir_all(cache_dir());
+        let _ = fs::write(&p, v.to_string());
+        return Some(v);
+    }
+    serde_json::from_str(&fs::read_to_string(p).ok()?).ok()
+}
+
+/// Thunderstore community of a Steam game, if it has one.
+pub fn community_for(appid: u32) -> Option<String> {
+    community_in(&schema()?, appid)
+}
+
+fn community_in(schema: &serde_json::Value, appid: u32) -> Option<String> {
+    let id = appid.to_string();
+    schema["games"].as_object()?.iter().find_map(|(key, g)| {
+        let on_steam = g["distributions"]
+            .as_array()?
+            .iter()
+            .any(|d| d["platform"] == "steam" && d["identifier"].as_str() == Some(id.as_str()));
+        if !on_steam {
+            return None;
+        }
+        // The community is in the package index URL: .../c/<community>/api/...
+        let from_index = g["r2modman"][0]["packageIndex"]
+            .as_str()
+            .and_then(|u| u.split("/c/").nth(1))
+            .and_then(|r| r.split('/').next())
+            .map(String::from);
+        Some(from_index.unwrap_or_else(|| key.clone()))
+    })
+}
+
+/// Does the package belong to this community? The site only serves the package page
+/// under its own community.
+pub fn in_community(community: &str, r: &PackageRef) -> bool {
+    if !plain_slug(community) {
+        return false;
+    }
+    let url = format!("https://thunderstore.io/c/{community}/p/{}/{}/", r.namespace, r.name);
+    agent().head(&url).call().is_ok()
+}
+
+fn plain_slug(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Which of the games a package from a link (which doesn't say the game) is for: the
+/// first game, in the given order, whose community has the package.
+pub fn game_for<'a>(r: &PackageRef, games: &'a [Game]) -> Option<&'a Game> {
+    games
+        .iter()
+        .filter(|g| g.loader != Loader::Smapi)
+        .find(|g| community_for(g.steam.appid).is_some_and(|c| in_community(&c, r)))
+}
+
 /// Is this package (any version) already in the game? Then a dependency is not reinstalled.
 pub fn installed(game: &Game, p: &Package) -> bool {
     let unit = format!("BepInEx/plugins/{}", p.folder());
@@ -236,6 +299,19 @@ mod tests {
         for bad in ["Owner", "../x-y", "Owner-Cool_Mod-1.x", "Owner-Co/ol", "https://evil.example/c/p/p/A/B/", "Owner-Mod-1.2-3"] {
             assert!(PackageRef::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn finds_the_community_of_a_steam_game() {
+        let schema = serde_json::json!({"games": {
+            "peak": {"distributions": [{"platform": "steam", "identifier": "3527290"}],
+                     "r2modman": [{"packageIndex": "https://thunderstore.io/c/peak/api/v1/package-listing-index/"}]},
+            "other": {"distributions": [{"platform": "epic-games-store", "identifier": "3527290"}]},
+            "ror2": {"distributions": [{"platform": "steam", "identifier": "632360"}]}
+        }});
+        assert_eq!(community_in(&schema, 3527290).as_deref(), Some("peak"));
+        assert_eq!(community_in(&schema, 632360).as_deref(), Some("ror2"));
+        assert_eq!(community_in(&schema, 1), None);
     }
 
     #[test]
