@@ -7,6 +7,50 @@ Native Linux mod manager for Steam games (Vortex-like), Rust + Slint. Read this 
 docs are in English (some old comments are still in Portuguese; translate when touched).
 Commit messages: short imperative English subject, no conventional-commit prefix needed.
 
+## How to work here (not optional)
+
+Most bugs come from rushed edits, not hard tasks.
+
+1. **Read before writing.** Open the file you will change and the related ones.
+2. **State the diagnosis before editing.** In 3–6 lines: what you understood, where the
+   cause is (file and line) and what you will change. If the request can be read two
+   ways, **ask** instead of guessing. A question costs one message; a wrong guess costs a
+   session of undoing.
+3. **Minimal scope.** Touch only what the request covers. No renaming, reordering,
+   reformatting or "improving along the way". Unrequested refactors get rejected.
+4. **One change at a time.** Edit, verify, then move on.
+5. **Verify for real:** `cargo build` (and `cargo clippy`) with no new warnings; run the
+   affected CLI path; for UI, a snapshot (see "Testing without clicking") when a display
+   exists. Without verification, don't say it's done.
+6. **Report honestly:** what changed, what you tested and what you did **not** test.
+   Never write "fixed and tested" about something you only read. If a command, test or
+   build fails, report every error clearly.
+7. **Complex or multi-file task:** present the plan (scope, steps, files) and wait for the
+   OK. Trivial isolated fixes can go straight in.
+
+Absolute rules:
+- **Don't `git push`, force push, open releases or change repo settings** unless the user
+  asks. Commits are fine.
+- **Privacy:** never commit personal data, tokens, API keys, logs, or paths with a real
+  home directory (`/home/<user>`). The repo is public.
+- **Never overwrite user state** (`~/.config/linex-mods/`, `~/.local/share/linex-mods/`,
+  the user's game folders and mods) while testing: use a fake `HOME`.
+- Commands for the user to run: one per ```bash block, no leading `$`. The user's shell
+  is fish, so bash-only syntax needs `bash -c '...'`.
+
+## Visual: no "AI look"
+
+Screens have been rejected before for looking "made by AI".
+
+- Don't: emoji as icons, mockups of things that exist, "tip" cards with colored circle
+  icons, everything in outlined boxes, cards inside cards, loose hex colors (colors come
+  from `Theme`), marketing text (adjectives, exclamation marks, promises the app doesn't
+  keep), gradients/glow/colored shadows/animations without a purpose.
+- Do: one accent per screen (theme color only on what is on/selected), hierarchy through
+  text rather than boxes, reuse the existing components in `ui/app.slint`, real controls
+  that read state on open and apply immediately. Reference look: Steam, r2modman, the
+  Claude app — minimal, dark, usable by anyone.
+
 ## Build and run
 
 ```sh
