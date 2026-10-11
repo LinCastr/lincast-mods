@@ -2,6 +2,7 @@ mod games;
 mod gui;
 mod install;
 mod mods;
+mod records;
 mod steam;
 mod vdf;
 
@@ -14,6 +15,7 @@ const USAGE: &str = "uso:
   linex-mods instalar <jogo> <arquivo.zip|.7z|.rar>...
   linex-mods ligar <jogo> <mod>
   linex-mods desligar <jogo> <mod>
+  linex-mods remover <jogo> <mod>
 
 <jogo> é o AppID do Steam ou parte do nome.";
 
@@ -45,15 +47,16 @@ fn run(args: &[String]) -> Result<()> {
         ["instalar", q, files @ ..] if !files.is_empty() => {
             let g = game(q)?;
             for f in files {
-                let names = install::install_archive(&g, Path::new(f)).with_context(|| format!("instalando {f}"))?;
-                println!("{f}:");
-                for n in names {
+                let rec = install::install_archive(&g, Path::new(f), None, None).with_context(|| format!("instalando {f}"))?;
+                println!("{}:", rec.name);
+                for n in rec.files {
                     println!("  → {n}");
                 }
             }
         }
         ["ligar", q, id] => mods::set_enabled(&game(q)?, id, true)?,
         ["desligar", q, id] => mods::set_enabled(&game(q)?, id, false)?,
+        ["remover", q, id] => println!("{} foi para a Lixeira", mods::uninstall(&game(q)?, id)?),
         _ => bail!("{USAGE}"),
     }
     Ok(())

@@ -1,6 +1,7 @@
 //! Lista, liga e desliga os mods de um jogo.
 
 use crate::games::{Game, Loader};
+use crate::records;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -172,6 +173,19 @@ pub fn list(game: &Game) -> Vec<Mod> {
     let mut mods = Vec::new();
     scan(game.loader, &game.mods_dir(), true, &mut mods);
     scan(game.loader, &game.disabled_dir(), false, &mut mods);
+    // DLLs têm nome de arquivo ("ContinuousSprint"); o registro guarda o nome do mod.
+    if game.loader != Loader::Smapi {
+        let recs = records::load(game.steam.appid);
+        for m in &mut mods {
+            if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
+                let r = &recs.mods[i];
+                m.name = r.name.clone();
+                if m.version.is_none() {
+                    m.version = r.nexus.as_ref().and_then(|n| n.version.clone());
+                }
+            }
+        }
+    }
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     mods
 }
@@ -198,6 +212,54 @@ pub fn set_enabled(game: &Game, id: &str, enable: bool) -> Result<()> {
     }
     fs::create_dir_all(&to).with_context(|| format!("criando {}", to.display()))?;
     fs::rename(&src, &dst).with_context(|| format!("movendo {} para {}", src.display(), dst.display()))
+}
+
+/// Manda o mod para a Lixeira (recuperável), com tudo o que ele instalou e que
+/// nenhum outro mod usa. Mod sem registro (instalado à mão): só a própria unidade.
+pub fn uninstall(game: &Game, id: &str) -> Result<String> {
+    if id.contains('/') || id == ".." || id.is_empty() {
+        bail!("nome de mod inválido: {id}");
+    }
+    let appid = game.steam.appid;
+    let unit = format!("{}/{id}", game.loader.mods_dir());
+    let mut recs = records::load(appid);
+    let owner = recs.owner(&unit);
+    let (name, targets): (String, Vec<String>) = match owner {
+        Some(i) => (
+            recs.mods[i].name.clone(),
+            recs.mods[i].files.iter().filter(|f| !recs.shared(f, i)).cloned().collect(),
+        ),
+        None => (id.to_string(), vec![unit.clone()]),
+    };
+    let dir = game.dir();
+    let disabled_root = dir.join(".linex-disabled");
+    let mut trashed = Vec::new();
+    for t in &targets {
+        for p in [dir.join(t), disabled_root.join(t)] {
+            if p.exists() {
+                trash::delete(&p).with_context(|| format!("mandando {} para a Lixeira", p.display()))?;
+                trashed.push(p);
+            }
+        }
+    }
+    // Pastas que ficaram vazias (ex.: UserLibs/<mod>/), sem subir até as do loader.
+    for p in &trashed {
+        let mut cur = p.parent().map(Path::to_path_buf);
+        while let Some(d) = cur {
+            if d == dir || d == disabled_root || d.parent() == Some(dir) || d.parent() == Some(disabled_root.as_path()) || d == game.mods_dir() {
+                break;
+            }
+            if fs::remove_dir(&d).is_err() {
+                break;
+            }
+            cur = d.parent().map(Path::to_path_buf);
+        }
+    }
+    if let Some(i) = owner {
+        recs.mods.remove(i);
+        records::save(appid, &recs)?;
+    }
+    Ok(name)
 }
 
 #[cfg(test)]

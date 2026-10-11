@@ -173,6 +173,25 @@ pub fn run() -> anyhow::Result<()> {
         });
     }
     {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_remove_mod(move |id| {
+            let Some(ui) = weak.upgrade() else { return };
+            let st = state.borrow();
+            let Some(g) = st.game() else { return };
+            match mods::uninstall(g, &id) {
+                Ok(name) => {
+                    ui.set_message(format!("{name} foi para a Lixeira.").into());
+                    ui.set_message_error(false);
+                }
+                Err(e) => {
+                    ui.set_message(format!("Não deu para remover {id}: {e:#}").into());
+                    ui.set_message_error(true);
+                }
+            }
+            refresh_mods(&ui, &st);
+        });
+    }
+    {
         let state = state.clone();
         ui.on_play(move || {
             if let Some(g) = state.borrow().game() {
@@ -208,7 +227,7 @@ pub fn run() -> anyhow::Result<()> {
                 let mut errors = Vec::new();
                 for f in &files {
                     let name = install::clean_stem(f);
-                    match install::install_archive(&game, f) {
+                    match install::install_archive(&game, f, None, None) {
                         Ok(_) => ok.push(name),
                         Err(e) => errors.push(format!("{name}: {e:#}")),
                     }

@@ -129,9 +129,17 @@ component GameRow inherits Rectangle {
 component ModRow inherits Rectangle {
     in property <ModItem> item;
     callback toggled(bool);
+    callback remove();
+    // Primeiro clique em "Remover" pede confirmação; some sozinho em 3 s.
+    property <bool> confirm;
     height: 52px;
-    background: ta.has-hover ? #ffffff06 : transparent;
+    background: ta.has-hover || rm.has-hover ? #ffffff06 : transparent;
     ta := TouchArea { }
+    Timer {
+        interval: 3s;
+        running: root.confirm;
+        triggered => { root.confirm = false; }
+    }
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
@@ -150,6 +158,28 @@ component ModRow inherits Rectangle {
                 color: Theme.faint;
                 font-size: 11px;
                 overflow: elide;
+            }
+        }
+        Rectangle {
+            width: rm-text.preferred-width + 16px;
+            opacity: ta.has-hover || rm.has-hover || root.confirm ? 1 : 0;
+            animate opacity { duration: 100ms; }
+            rm-text := Text {
+                text: root.confirm ? "Confirmar remoção" : "Remover";
+                color: root.confirm ? Theme.error : (rm.has-hover ? Theme.text : Theme.faint);
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            rm := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if root.confirm {
+                        root.confirm = false;
+                        root.remove();
+                    } else {
+                        root.confirm = true;
+                    }
+                }
             }
         }
         Toggle {
@@ -192,6 +222,7 @@ export component AppWindow inherits Window {
 
     callback select-game(int);
     callback toggle-mod(string, bool);
+    callback remove-mod(string);
     callback add-mod();
     callback play();
     callback open-folder();
@@ -332,6 +363,7 @@ export component AppWindow inherits Window {
                     for m in root.mods: ModRow {
                         item: m;
                         toggled(v) => { root.toggle-mod(m.id, v); }
+                        remove => { root.remove-mod(m.id); }
                     }
                     if root.mods.length == 0 && root.current >= 0: Text {
                         text: root.filter == "" ? "Nenhum mod instalado. Use \"Adicionar mod\" para instalar um arquivo .zip." : "Nenhum mod com esse nome.";

@@ -1,6 +1,7 @@
 //! Instala um mod a partir de um arquivo (.zip nativo; .7z/.rar pelo 7z ou bsdtar).
 
 use crate::games::{Game, Loader};
+use crate::records::{self, NexusSource, Record};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -173,7 +174,7 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     let mut done = Vec::new();
     for (src, name) in units {
         replace_dir(&src, &mods_dir.join(&name), &game.disabled_dir().join(&name))?;
-        done.push(name);
+        done.push(format!("{}/{name}", game.loader.mods_dir()));
     }
     Ok(done)
 }
@@ -221,6 +222,8 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     };
     let mut placed: Vec<(PathBuf, PathBuf)> = Vec::new();
     let mut loose: Vec<PathBuf> = Vec::new();
+    // Pasta própria de um mod de BepInEx solto: vira uma unidade só no registro.
+    let mut unit_dir: Option<PathBuf> = None;
     for f in &files {
         let rel = f.strip_prefix(root).unwrap();
         let comps: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
@@ -251,6 +254,7 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
         _ => {
             // Mod de BepInEx solto: tudo numa pasta própria em plugins/.
             if !loose_dlls.is_empty() {
+                unit_dir = Some(game.mods_dir().join(stem));
                 for f in &loose {
                     if f.file_name().is_some_and(|n| is_doc(&n.to_string_lossy())) {
                         continue;
@@ -264,11 +268,19 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     if placed.is_empty() {
         bail!("não achei nada para instalar (nenhuma DLL nem pasta do {})", game.loader.label());
     }
+    let rel = |p: &Path| p.strip_prefix(dir).unwrap_or(p).to_string_lossy().to_string();
     let mut names = Vec::new();
+    if let Some(u) = &unit_dir {
+        names.push(rel(u));
+    }
     for (src, dst) in placed {
-        copy_tree(&src, &dst)?;
-        let shown = dst.strip_prefix(dir).unwrap_or(&dst).display().to_string();
-        names.push(shown);
+        // DLL que estava desligada: a versão nova substitui e continua desligada.
+        let disabled = game.dir().join(".linex-disabled").join(rel(&dst));
+        let target = if disabled.is_file() && !dst.exists() { disabled } else { dst.clone() };
+        copy_tree(&src, &target)?;
+        if unit_dir.as_ref().is_none_or(|u| !dst.starts_with(u)) {
+            names.push(rel(&dst));
+        }
     }
     Ok(names)
 }
@@ -286,14 +298,32 @@ pub fn clean_stem(archive: &Path) -> String {
     if s.is_empty() { stem } else { s }
 }
 
-pub fn install_archive(game: &Game, archive: &Path) -> Result<Vec<String>> {
+/// Instala e registra. `name` e `nexus` vêm do download pelo Nexus; para arquivo
+/// local o nome sai do próprio arquivo.
+pub fn install_archive(
+    game: &Game,
+    archive: &Path,
+    name: Option<String>,
+    nexus: Option<NexusSource>,
+) -> Result<Record> {
     let tmp = TempDir::new()?;
     extract(archive, &tmp.0)?;
     let stem = clean_stem(archive);
-    match game.loader {
+    let files = match game.loader {
         Loader::Smapi => install_smapi(game, &tmp.0, &stem),
         Loader::MelonLoader | Loader::BepInEx => install_unity(game, &tmp.0, &stem),
-    }
+    }?;
+    let rec = Record {
+        name: name.unwrap_or(stem),
+        files,
+        archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+        nexus,
+        installed_at: records::now(),
+    };
+    let mut recs = records::load(game.steam.appid);
+    recs.put(rec.clone());
+    records::save(game.steam.appid, &recs)?;
+    Ok(rec)
 }
 
 #[cfg(test)]
