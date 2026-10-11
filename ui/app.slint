@@ -15,6 +15,9 @@ export global Theme {
     in-out property <color> on-accent: #ffffff;
     in-out property <color> warn: #e0b04a;
     in-out property <color> error: #e5534b;
+    // Brand marks of the two mod sites (their own colors, not the theme's).
+    out property <color> nexus: #da8e35;
+    out property <color> thunderstore: #23ffb0;
     out property <length> radius: 6px;
 }
 
@@ -44,7 +47,8 @@ export struct ModItem {
     name: string,
     author: string,
     version: string,
-    source: string,
+    // 0 unknown, 1 Nexus, 2 Thunderstore.
+    source: int,
     update: string,
     page: string,
     icon: image,
@@ -524,11 +528,12 @@ component ModRow inherits Rectangle {
                 horizontal-stretch: 0;
                 max-width: self.preferred-width;
             }
-            if item.source != "": Text {
-                text: item.source;
-                color: Theme.faint;
-                font-size: 11px;
-                vertical-alignment: center;
+            Image {
+                source: item.source == 1 ? @image-url("icons/nexus.svg") : item.source == 2 ? @image-url("icons/thunderstore.svg") : @image-url("icons/unknown.svg");
+                width: 13px;
+                y: (parent.height - self.height) / 2;
+                colorize: item.source == 1 ? Theme.nexus : item.source == 2 ? Theme.thunderstore : Theme.faint;
+                opacity: item.enabled ? (item.source == 0 ? 0.7 : 0.85) : 0.4;
             }
             Rectangle { horizontal-stretch: 1; }
         }

@@ -208,6 +208,16 @@ fn schema() -> Option<serde_json::Value> {
     serde_json::from_str(&fs::read_to_string(p).ok()?).ok()
 }
 
+/// Community from the cached game list only (never touches the network): for the UI.
+pub fn community_cached(appid: u32) -> Option<String> {
+    let v = serde_json::from_str(&fs::read_to_string(cache_dir().join("schema.json")).ok()?).ok()?;
+    community_in(&v, appid)
+}
+
+pub fn package_page(community: &str, namespace: &str, name: &str) -> String {
+    format!("https://thunderstore.io/c/{community}/p/{namespace}/{name}/")
+}
+
 /// Thunderstore community of a Steam game, if it has one.
 pub fn community_for(appid: u32) -> Option<String> {
     community_in(&schema()?, appid)
@@ -276,7 +286,8 @@ pub fn install(game: &Game, r: &PackageRef, mut on_step: impl FnMut(&str)) -> Re
         }
         on_step(&format!("{} {}", p.display_name(), p.version));
         let zip = download(p, |_, _| {})?;
-        let rec = crate::install::install_thunderstore(game, &zip, &p.folder(), &p.display_name())
+        let source = crate::records::TsSource { namespace: p.namespace.clone(), name: p.name.clone(), version: p.version.clone() };
+        let rec = crate::install::install_thunderstore(game, &zip, &p.folder(), &p.display_name(), Some(source))
             .with_context(|| tr!("installing {}", "instalando {}", p.folder()))?;
         done.push(rec);
     }

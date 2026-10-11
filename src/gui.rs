@@ -103,6 +103,7 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
         return;
     };
     let mut all = mods::list(g);
+    let community = crate::thunderstore::community_cached(g.steam.appid);
     if ui.get_sort_desc() {
         all.reverse();
     }
@@ -136,12 +137,21 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
             ModItem {
                 has_icon: icon.size().width > 0,
                 icon,
-                page: m.nexus_key.as_ref().map(|(d, id)| nexus::mod_page(d, *id)).unwrap_or_default().into(),
+                page: match (&m.ts_key, &m.nexus_key, &community) {
+                    (Some((ns, n)), _, Some(c)) => crate::thunderstore::package_page(c, ns, n),
+                    (_, Some((d, id)), _) => nexus::mod_page(d, *id),
+                    _ => String::new(),
+                }
+                .into(),
                 id: m.id.into(),
                 name: m.name.into(),
                 author: m.author.unwrap_or_default().into(),
                 version: m.version.unwrap_or_else(|| "—".into()).into(),
-                source: if m.from_nexus { "Nexus".into() } else { SharedString::new() },
+                source: match m.source {
+                    mods::Source::Unknown => 0,
+                    mods::Source::Nexus => 1,
+                    mods::Source::Thunderstore => 2,
+                },
                 update: update.into(),
                 enabled: m.enabled,
             }

@@ -15,6 +15,14 @@ pub struct NexusSource {
     pub version: Option<String>,
 }
 
+/// Package installed from Thunderstore.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TsSource {
+    pub namespace: String,
+    pub name: String,
+    pub version: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
     pub name: String,
@@ -24,6 +32,8 @@ pub struct Record {
     pub archive: String,
     #[serde(default)]
     pub nexus: Option<NexusSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thunderstore: Option<TsSource>,
     #[serde(default)]
     pub installed_at: u64,
     /// Install warning (e.g. mod made for another loader). Not saved.
@@ -110,7 +120,7 @@ mod tests {
     use super::*;
 
     fn rec(name: &str, files: &[&str]) -> Record {
-        Record { name: name.into(), files: files.iter().map(|f| f.to_string()).collect(), archive: String::new(), nexus: None, installed_at: 0, warning: None }
+        Record { name: name.into(), files: files.iter().map(|f| f.to_string()).collect(), archive: String::new(), nexus: None, thunderstore: None, installed_at: 0, warning: None }
     }
 
     #[test]

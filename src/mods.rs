@@ -6,6 +6,15 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::Path;
 
+/// Where a mod came from, as far as the app can tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Source {
+    #[default]
+    Unknown,
+    Nexus,
+    Thunderstore,
+}
+
 #[derive(Debug, Clone)]
 pub struct Mod {
     /// File or folder name inside the mods folder; identifies the mod.
@@ -14,8 +23,6 @@ pub struct Mod {
     pub version: Option<String>,
     pub author: Option<String>,
     pub enabled: bool,
-    /// Installed through the Nexus button (the record has its source).
-    pub from_nexus: bool,
     pub nexus: Option<records::NexusSource>,
     /// Mod on the Nexus (game domain, mod id): from the install record or, for SMAPI,
     /// from the manifest's UpdateKeys ("Nexus:1234").
@@ -23,6 +30,9 @@ pub struct Mod {
     smapi_nexus_id: Option<u64>,
     /// `icon.png` shipped inside the mod folder (Thunderstore packages have one).
     pub icon_src: Option<std::path::PathBuf>,
+    pub source: Source,
+    /// Thunderstore package (namespace, name): from the record or the r2modman folder name.
+    pub ts_key: Option<(String, String)>,
 }
 
 /// "Nexus:1234" or "Nexus:1234@sub" among the UpdateKeys of a SMAPI manifest.
@@ -195,11 +205,12 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
         version: None,
         author: None,
         enabled,
-        from_nexus: false,
         nexus: None,
         nexus_key: None,
         smapi_nexus_id: None,
         icon_src: path.join("icon.png").is_file().then(|| path.join("icon.png")),
+        source: Source::Unknown,
+        ts_key: None,
     };
     match loader {
         Loader::MelonLoader => {
@@ -222,8 +233,11 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
                     m.name = humanize(if n.is_empty() { &m.id } else { n });
                 }
                 m.version = json_field(&man, "version_number");
-                if let Some((author, _)) = m.id.split_once('-') {
+                if let Some((author, pkg)) = m.id.split_once('-') {
                     m.author = Some(author.to_string());
+                    if m.version.is_some() && !pkg.is_empty() && !pkg.contains('-') {
+                        m.ts_key = Some((author.to_string(), pkg.to_string()));
+                    }
                 }
             } else {
                 m.name = humanize(&m.id);
@@ -264,7 +278,6 @@ pub fn list(game: &Game) -> Vec<Mod> {
     for m in &mut mods {
         if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
             let r = &recs.mods[i];
-            m.from_nexus = r.nexus.is_some();
             m.nexus = r.nexus.clone();
             m.nexus_key = r.nexus.as_ref().map(|n| (n.domain.clone(), n.mod_id));
             if game.loader != Loader::Smapi {
@@ -273,6 +286,10 @@ pub fn list(game: &Game) -> Vec<Mod> {
             if m.version.is_none() {
                 m.version = r.nexus.as_ref().and_then(|n| n.version.clone());
             }
+            if let Some(t) = &r.thunderstore {
+                m.ts_key = Some((t.namespace.clone(), t.name.clone()));
+                m.version = m.version.take().or(Some(t.version.clone()));
+            }
         }
     }
     let domain = game.nexus_domain();
@@ -280,6 +297,13 @@ pub fn list(game: &Game) -> Vec<Mod> {
         if m.nexus_key.is_none() {
             m.nexus_key = m.smapi_nexus_id.map(|id| (domain.clone(), id));
         }
+        m.source = if m.ts_key.is_some() {
+            Source::Thunderstore
+        } else if m.nexus_key.is_some() {
+            Source::Nexus
+        } else {
+            Source::Unknown
+        };
     }
     mods.sort_by_key(|a| a.name.to_lowercase());
     mods

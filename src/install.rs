@@ -1,7 +1,7 @@
 //! Installs a mod from an archive (.zip natively; .7z/.rar through 7z or bsdtar).
 
 use crate::games::{Game, Loader};
-use crate::records::{self, NexusSource, Record};
+use crate::records::{self, NexusSource, Record, TsSource};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -364,12 +364,16 @@ pub fn install_archive(
     {
         let file_stem = archive.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         let pkg_name = crate::mods::json_field(&m, "name").unwrap_or_else(|| stem.clone());
-        let folder = match crate::thunderstore::PackageRef::parse(&file_stem) {
-            Ok(r) if r.name.eq_ignore_ascii_case(&pkg_name) => r.full_name(),
-            _ => pkg_name.clone(),
+        let version = crate::mods::json_field(&m, "version_number").unwrap_or_default();
+        let (folder, source) = match crate::thunderstore::PackageRef::parse(&file_stem) {
+            Ok(r) if r.name.eq_ignore_ascii_case(&pkg_name) => {
+                let source = TsSource { namespace: r.namespace.clone(), name: r.name.clone(), version };
+                (r.full_name(), Some(source))
+            }
+            _ => (pkg_name.clone(), None),
         };
         drop(tmp);
-        return install_thunderstore(game, archive, &folder, &name.unwrap_or_else(|| pkg_name.replace('_', " ")));
+        return install_thunderstore(game, archive, &folder, &name.unwrap_or_else(|| pkg_name.replace('_', " ")), source);
     }
     let warning = dll_loader(&tmp.0).filter(|l| *l != game.loader).map(|l| {
         tr!(
@@ -389,6 +393,7 @@ pub fn install_archive(
         files,
         archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
         nexus,
+        thunderstore: None,
         installed_at: records::now(),
         warning,
     };
@@ -402,11 +407,18 @@ pub fn install_archive(
 /// `BepInEx/plugins/<folder>/` (with its manifest.json and icon.png, which the mod list
 /// reads); `patchers/`, `core/` and `monomod/` go to `BepInEx/<that>/<folder>/` (r2modman's
 /// install rules), and `config/` files are copied only when missing (the user's settings).
-pub fn install_thunderstore(game: &Game, archive: &Path, folder: &str, name: &str) -> Result<Record> {
+pub fn install_thunderstore(game: &Game, archive: &Path, folder: &str, name: &str, source: Option<TsSource>) -> Result<Record> {
     if game.loader != Loader::BepInEx {
         // MelonLoader packages use the game's own folders (Mods/, UserLibs/): the
         // normal install already places them.
-        return install_archive(game, archive, Some(name.to_string()), None);
+        let mut rec = install_archive(game, archive, Some(name.to_string()), None)?;
+        if source.is_some() {
+            rec.thunderstore = source;
+            let mut recs = records::load(game.steam.appid);
+            recs.put(rec.clone());
+            records::save(game.steam.appid, &recs)?;
+        }
+        return Ok(rec);
     }
     if !is_plain_name(folder) {
         bail!("{}", tr!("invalid package name: {folder}", "nome de pacote inválido: {folder}"));
@@ -472,6 +484,7 @@ pub fn install_thunderstore(game: &Game, archive: &Path, folder: &str, name: &st
         files: placed,
         archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
         nexus: None,
+        thunderstore: source,
         installed_at: records::now(),
         warning,
     };
