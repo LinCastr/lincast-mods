@@ -2745,6 +2745,7 @@ name = "linex-mods"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "image",
  "keyring",
  "notify-rust",
  "png 0.17.16",

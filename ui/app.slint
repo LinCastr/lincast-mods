@@ -47,6 +47,8 @@ export struct ModItem {
     source: string,
     update: string,
     page: string,
+    icon: image,
+    has-icon: bool,
     enabled: bool,
 }
 
@@ -408,7 +410,27 @@ component ModRow inherits Rectangle {
         padding-right: 12px;
         spacing: 16px;
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 10px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 5px;
+                clip: true;
+                background: Theme.surface;
+                if item.has-icon: Image {
+                    source: item.icon;
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: cover;
+                    opacity: item.enabled ? 1 : 0.45;
+                }
+                if !item.has-icon: Image {
+                    source: @image-url("icons/puzzle.svg");
+                    width: 13px;
+                    colorize: Theme.faint;
+                }
+            }
             Text {
                 text: item.name;
                 color: item.enabled ? Theme.text : Theme.faint;

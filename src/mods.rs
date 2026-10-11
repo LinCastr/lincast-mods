@@ -17,11 +17,36 @@ pub struct Mod {
     /// Instalado pelo botão do Nexus (tem a origem no registro).
     pub from_nexus: bool,
     pub nexus: Option<records::NexusSource>,
+    /// Mod on the Nexus (game domain, mod id): from the install record or, for SMAPI,
+    /// from the manifest's UpdateKeys ("Nexus:1234").
+    pub nexus_key: Option<(String, u64)>,
+    smapi_nexus_id: Option<u64>,
+    /// `icon.png` shipped inside the mod folder (Thunderstore packages have one).
+    pub icon_src: Option<std::path::PathBuf>,
+}
+
+/// "Nexus:1234" or "Nexus:1234@sub" among the UpdateKeys of a SMAPI manifest.
+fn smapi_nexus_id(man: &serde_json::Value) -> Option<u64> {
+    let keys = man.as_object()?.iter().find(|(k, _)| k.eq_ignore_ascii_case("UpdateKeys"))?.1.as_array()?;
+    keys.iter().filter_map(|k| k.as_str()).find_map(|k| {
+        let (site, rest) = k.split_once(':')?;
+        if !site.trim().eq_ignore_ascii_case("nexus") {
+            return None;
+        }
+        let digits: String = rest.trim().chars().take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse().ok()
+    })
 }
 
 /// "GrowableMoondewNectarMod" → "Growable Moondew Nectar Mod", "SR2_INF" → "SR2 INF".
 /// Só para DLL sem registro (instalada à mão): o nome real do mod não está em lugar nenhum.
 fn humanize(stem: &str) -> String {
+    // Names that must not be split ("BepInEx" would become "Bep In Ex").
+    const KEEP: [&str; 3] = ["BepInEx", "MelonLoader", "IL2CPP"];
+    let mut stem = stem.to_string();
+    for (i, k) in KEEP.iter().enumerate() {
+        stem = stem.replace(k, &format!(" \u{1}{i}\u{1} "));
+    }
     let chars: Vec<char> = stem.chars().collect();
     let mut out = String::new();
     for (i, &c) in chars.iter().enumerate() {
@@ -38,7 +63,11 @@ fn humanize(stem: &str) -> String {
         }
         out.push(c);
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut out = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    for (i, k) in KEEP.iter().enumerate() {
+        out = out.replace(&format!("\u{1}{i}\u{1}"), k);
+    }
+    out
 }
 
 /// Arquivos que acompanham mods mas não são mods.
@@ -153,6 +182,9 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
         enabled,
         from_nexus: false,
         nexus: None,
+        nexus_key: None,
+        smapi_nexus_id: None,
+        icon_src: path.join("icon.png").is_file().then(|| path.join("icon.png")),
     };
     match loader {
         Loader::MelonLoader => {
@@ -167,6 +199,19 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
                     return None;
                 }
                 m.name = humanize(&m.id[..m.id.len() - 4]);
+            } else if let Some(man) = fs::read_to_string(path.join("manifest.json")).ok().and_then(|t| lenient_json(&t)) {
+                // Thunderstore package (r2modman layout): folder "Author-Name" with a
+                // manifest.json carrying the name and version_number.
+                if let Some(n) = json_field(&man, "name") {
+                    let n = n.trim_end_matches("_BepInEx").trim_end_matches("BepInEx");
+                    m.name = humanize(if n.is_empty() { &m.id } else { n });
+                }
+                m.version = json_field(&man, "version_number");
+                if let Some((author, _)) = m.id.split_once('-') {
+                    m.author = Some(author.to_string());
+                }
+            } else {
+                m.name = humanize(&m.id);
             }
         }
         Loader::Smapi => {
@@ -183,6 +228,7 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
                 }
                 m.version = json_field(&man, "Version");
                 m.author = json_field(&man, "Author");
+                m.smapi_nexus_id = smapi_nexus_id(&man);
             }
         }
     }
@@ -206,12 +252,19 @@ pub fn list(game: &Game) -> Vec<Mod> {
             let r = &recs.mods[i];
             m.from_nexus = r.nexus.is_some();
             m.nexus = r.nexus.clone();
+            m.nexus_key = r.nexus.as_ref().map(|n| (n.domain.clone(), n.mod_id));
             if game.loader != Loader::Smapi {
                 m.name = r.name.clone();
             }
             if m.version.is_none() {
                 m.version = r.nexus.as_ref().and_then(|n| n.version.clone());
             }
+        }
+    }
+    let domain = game.nexus_domain();
+    for m in &mut mods {
+        if m.nexus_key.is_none() {
+            m.nexus_key = m.smapi_nexus_id.map(|id| (domain.clone(), id));
         }
     }
     mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -300,6 +353,7 @@ mod tests {
         assert_eq!(humanize("SR2_INF"), "SR2 INF");
         assert_eq!(humanize("RichPresenceMod"), "Rich Presence Mod");
         assert_eq!(humanize("UIInfoSuite"), "UI Info Suite");
+        assert_eq!(humanize("BepInExConfigManager"), "BepInEx Config Manager");
     }
 
     #[test]

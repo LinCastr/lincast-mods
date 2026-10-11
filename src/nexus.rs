@@ -148,10 +148,11 @@ pub fn validate(key: &str) -> Result<(String, bool)> {
     Ok((name, premium))
 }
 
-/// Versão atual do mod no Nexus (a que a página mostra).
-pub fn mod_version(domain: &str, mod_id: u64, key: &str) -> Result<Option<String>> {
+/// Current version and main picture of a mod on the Nexus.
+pub fn mod_info(domain: &str, mod_id: u64, key: &str) -> Result<crate::meta::NexusInfo> {
     let v = get_json(&format!("/games/{domain}/mods/{mod_id}.json"), key)?;
-    Ok(v["version"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
+    let s = |k: &str| v[k].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    Ok(crate::meta::NexusInfo { version: s("version"), picture: s("picture_url"), fetched: crate::records::now() })
 }
 
 pub fn mod_page(domain: &str, mod_id: u64) -> String {

@@ -5,6 +5,7 @@ mod gui;
 mod install;
 mod ipc;
 mod loaders;
+mod meta;
 mod log;
 mod mods;
 mod nexus;

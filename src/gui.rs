@@ -16,11 +16,21 @@ struct State {
     /// Versões novas no Nexus: (appid, mod_id) → versão. Checado uma vez por jogo.
     updates: std::collections::HashMap<(u32, u64), String>,
     checked: std::collections::HashSet<u32>,
+    icons: RefCell<std::collections::HashMap<PathBuf, Image>>,
 }
 
 impl State {
     fn game(&self) -> Option<&Game> {
         self.current.and_then(|i| self.games.get(i))
+    }
+
+    /// Icon image, loaded once (the list is rebuilt on every keystroke of the search).
+    fn icon(&self, p: &std::path::Path) -> Image {
+        self.icons
+            .borrow_mut()
+            .entry(p.to_path_buf())
+            .or_insert_with(|| Image::load_from_path(p).unwrap_or_default())
+            .clone()
     }
 }
 
@@ -108,13 +118,22 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
         })
         .map(|m| {
             let update = m
-                .nexus
+                .nexus_key
                 .as_ref()
-                .and_then(|n| state.updates.get(&(g.steam.appid, n.mod_id)))
+                .and_then(|(_, id)| state.updates.get(&(g.steam.appid, *id)))
                 .cloned()
                 .unwrap_or_default();
+            let icon_path = m
+                .icon_src
+                .as_ref()
+                .map(|p| crate::meta::local_icon(p))
+                .filter(|p| p.is_file())
+                .or_else(|| m.nexus_key.as_ref().map(|(d, id)| crate::meta::nexus_icon(d, *id)).filter(|p| p.is_file()));
+            let icon = icon_path.map(|p| state.icon(&p)).unwrap_or_default();
             ModItem {
-                page: m.nexus.as_ref().map(|n| nexus::mod_page(&n.domain, n.mod_id)).unwrap_or_default().into(),
+                has_icon: icon.size().width > 0,
+                icon,
+                page: m.nexus_key.as_ref().map(|(d, id)| nexus::mod_page(d, *id)).unwrap_or_default().into(),
                 id: m.id.into(),
                 name: m.name.into(),
                 author: m.author.unwrap_or_default().into(),
@@ -163,30 +182,75 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
 
 /// Pergunta ao Nexus a versão atual dos mods baixados por lá (uma vez por jogo
 /// por sessão, fora da thread da janela). Sem chave, não faz nada.
+/// Icons and Nexus info for the game's mods, once per game per session, off the UI
+/// thread: local icon.png thumbnails first, then Nexus version and picture (cached
+/// for 6 h; without an API key only the cache is used). Ends by reporting mods with
+/// a newer version.
 fn check_updates(ui: &AppWindow, state: &mut State, appid: u32) {
     if !state.checked.insert(appid) {
         return;
     }
-    let sources: Vec<_> = crate::records::load(appid).mods.into_iter().filter_map(|r| r.nexus).collect();
-    if sources.is_empty() {
-        return;
-    }
+    let Some(g) = state.game() else { return };
+    let list = mods::list(g);
+    let locals: Vec<PathBuf> = list.iter().filter_map(|m| m.icon_src.clone()).collect();
+    let remotes: Vec<(String, u64, Option<String>)> = list
+        .iter()
+        .filter_map(|m| m.nexus_key.clone().map(|(d, id)| (d, id, m.version.clone())))
+        .collect();
     let weak = ui.as_weak();
+    let ping = move |w: &slint::Weak<AppWindow>, json: String| {
+        let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_updates_found(appid as i32, json.into()));
+    };
     std::thread::spawn(move || {
-        let Some(key) = nexus::load_key() else { return };
+        if locals.iter().filter(|p| crate::meta::ensure_local_icon(p).is_some()).count() > 0 {
+            ping(&weak, "{}".into());
+        }
+        if remotes.is_empty() {
+            return;
+        }
+        let key = nexus::load_key();
+        let mut info = crate::meta::load_info();
         let mut found = serde_json::Map::new();
-        for s in sources {
-            let (Some(local), Ok(Some(remote))) = (s.version.as_deref(), nexus::mod_version(&s.domain, s.mod_id, &key)) else {
-                continue;
+        let mut fresh_icons = 0;
+        for (domain, id, local) in &remotes {
+            let k = crate::meta::info_key(domain, *id);
+            let cached = info.get(&k).filter(|i| crate::meta::is_fresh(i)).cloned();
+            let i = match (cached, &key) {
+                (Some(i), _) => i,
+                (None, Some(key)) => match nexus::mod_info(domain, *id, key) {
+                    Ok(i) => {
+                        info.insert(k, i.clone());
+                        i
+                    }
+                    Err(e) => {
+                        log::line(&format!("nexus {domain}/{id}: {e:#}"));
+                        continue;
+                    }
+                },
+                (None, None) => match info.get(&k) {
+                    Some(i) => i.clone(),
+                    None => continue,
+                },
             };
-            if nexus::is_newer(&remote, local) {
-                found.insert(s.mod_id.to_string(), remote.into());
+            let icon = crate::meta::nexus_icon(domain, *id);
+            if !icon.is_file() {
+                if let Some(url) = &i.picture {
+                    if crate::meta::fetch_nexus_icon(url, &icon).is_ok() {
+                        fresh_icons += 1;
+                        if fresh_icons % 12 == 0 {
+                            ping(&weak, "{}".into());
+                        }
+                    }
+                }
+            }
+            if let (Some(remote), Some(local)) = (&i.version, local) {
+                if nexus::is_newer(remote, local) {
+                    found.insert(id.to_string(), remote.clone().into());
+                }
             }
         }
-        if !found.is_empty() {
-            let json = serde_json::Value::Object(found).to_string();
-            let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_updates_found(appid as i32, json.into()));
-        }
+        crate::meta::save_info(&info);
+        ping(&weak, serde_json::Value::Object(found).to_string());
     });
 }
 
@@ -481,7 +545,8 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
         ui.invoke_open_panel();
     }
     let weak = ui.as_weak();
-    slint::Timer::single_shot(std::time::Duration::from_millis(1800), move || {
+    let delay = std::env::var("LINEX_SNAPSHOT_DELAY").ok().and_then(|v| v.parse().ok()).unwrap_or(1800);
+    slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
         let Some(ui) = weak.upgrade() else { return };
         match ui.window().take_snapshot() {
             Ok(buf) => {
@@ -647,6 +712,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         current: None,
         updates: Default::default(),
         checked: Default::default(),
+        icons: Default::default(),
     }));
 
     apply_theme(&ui);
@@ -940,7 +1006,9 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             }
             if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
                 refresh_mods(&ui, &st);
-                set_msg(&ui, if n == 1 { "1 mod tem versão nova no Nexus.".to_string() } else { format!("{n} mods têm versão nova no Nexus.") }, false);
+                if n > 0 {
+                    set_msg(&ui, if n == 1 { "1 mod tem versão nova no Nexus.".to_string() } else { format!("{n} mods têm versão nova no Nexus.") }, false);
+                }
             }
         });
     }

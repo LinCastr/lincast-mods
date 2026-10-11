@@ -75,6 +75,11 @@ impl Game {
         self.nexus.map(|n| n == d).unwrap_or(false) || as_nexus_domain(&self.steam.name) == d
     }
 
+    /// Game "domain" on the Nexus (stardewvalley, slimerancher2...).
+    pub fn nexus_domain(&self) -> String {
+        self.nexus.map(String::from).unwrap_or_else(|| as_nexus_domain(&self.steam.name))
+    }
+
     pub fn dir(&self) -> &Path {
         &self.steam.dir
     }
