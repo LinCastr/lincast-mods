@@ -347,8 +347,9 @@ export component AppWindow inherits Window {
     in property <string> counts;
     in property <image> hero;
     in property <image> logo;
-    in property <string> message;
+    in-out property <string> message;
     in property <bool> message-error;
+    in property <bool> message-sticky;
     in property <bool> busy;
     in-out property <string> filter;
     in-out property <int> page;
@@ -435,19 +436,6 @@ export component AppWindow inherits Window {
                 open-key-page => { root.open-key-page(); }
             }
             Rectangle { }
-            if root.message != "": Rectangle {
-                height: 34px;
-                background: Theme.sidebar;
-                Text {
-                    x: 20px;
-                    text: root.message;
-                    color: root.message-error ? Theme.error : Theme.dim;
-                    font-size: 12px;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    width: parent.width - 40px;
-                }
-            }
         }
 
         // Conteúdo.
@@ -554,19 +542,53 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
+    }
 
-            // Linha de mensagem (resultado da última ação).
-            if root.message != "": Rectangle {
-                height: 34px;
-                background: Theme.sidebar;
-                Text {
-                    x: 20px;
-                    text: root.message;
-                    color: root.message-error ? Theme.error : Theme.dim;
-                    font-size: 12px;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    width: parent.width - 40px;
+    // Aviso no canto: sucesso some em 5 s; erro fica até fechar; progresso
+    // (message-sticky) fica enquanto durar.
+    toast-timer := Timer {
+        interval: 5s;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.message = "";
+        }
+    }
+    changed message => {
+        toast-timer.running = false;
+        if root.message != "" && !root.message-error && !root.message-sticky {
+            toast-timer.running = true;
+        }
+    }
+    if root.message != "": Rectangle {
+        width: min(toast.preferred-width, 520px);
+        height: toast.preferred-height;
+        x: parent.width - self.width - 20px;
+        y: parent.height - self.height - 20px;
+        border-radius: 8px;
+        background: #1d2026;
+        border-width: 1px;
+        border-color: root.message-error ? #e5534b80 : Theme.line;
+        toast := HorizontalLayout {
+            padding: 12px;
+            padding-left: 16px;
+            spacing: 14px;
+            Text {
+                text: root.message;
+                color: root.message-error ? Theme.error : Theme.text;
+                font-size: 12px;
+                wrap: word-wrap;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "×";
+                color: close.has-hover ? Theme.text : Theme.faint;
+                font-size: 16px;
+                vertical-alignment: center;
+                close := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.message = ""; }
                 }
             }
         }

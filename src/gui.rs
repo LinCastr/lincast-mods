@@ -120,8 +120,29 @@ fn open(target: &str) {
 }
 
 fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
-    ui.set_message(msg.into());
+    ui.set_message_sticky(false);
     ui.set_message_error(err);
+    ui.set_message(msg.into());
+}
+
+/// Mensagem de andamento: fica no canto até a próxima.
+fn set_progress(ui: &AppWindow, msg: impl Into<SharedString>) {
+    ui.set_message_sticky(true);
+    ui.set_message_error(false);
+    ui.set_message(msg.into());
+}
+
+/// Notificação do sistema, só para o que chega de fora da janela (clique no site):
+/// nessa hora o app costuma estar atrás do navegador.
+fn notify(summary: &str, body: &str, err: bool) {
+    let mut n = notify_rust::Notification::new();
+    n.appname("linex-mods").summary(summary).body(body).icon("applications-games");
+    if err {
+        n.urgency(notify_rust::Urgency::Critical);
+    }
+    if let Err(e) = n.show() {
+        log::line(&format!("notificação falhou: {e}"));
+    }
 }
 
 /// Link nxm:// recebido (do navegador ou de outra instância): baixa e instala
@@ -146,12 +167,18 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     ui.set_current(i as i32);
     select(ui, state, i);
     let game = state.games[i].clone();
-    set_msg(ui, "Baixando do Nexus…", false);
+    set_progress(ui, "Baixando do Nexus…");
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let appid = game.steam.appid as i32;
+        let game_name = game.steam.name.clone();
         let finish = |w: &slint::Weak<AppWindow>, msg: String, err: bool| {
             log::line(&msg);
+            if err {
+                notify("Mod não instalado", &msg, true);
+            } else {
+                notify(msg.trim_start_matches("Instalado: "), &format!("Instalado em {game_name}"), false);
+            }
             let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_nxm_finished(appid, msg.into(), err));
         };
         let Some(key) = nexus::load_key() else {
@@ -168,14 +195,14 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
                 } else {
                     format!("Baixando do Nexus… {step} MB")
                 };
-                let _ = w2.upgrade_in_event_loop(move |ui| set_msg(&ui, txt, false));
+                let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
             }
         });
         let dl = match dl {
             Ok(d) => d,
             Err(e) => return finish(&weak, format!("Download falhou: {e:#}"), true),
         };
-        let _ = weak.upgrade_in_event_loop(|ui| set_msg(&ui, "Instalando…", false));
+        let _ = weak.upgrade_in_event_loop(|ui| set_progress(&ui, "Instalando…"));
         match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
             Ok(rec) => {
                 let _ = std::fs::remove_file(&dl.path);
@@ -258,11 +285,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let st = state.borrow();
             let Some(g) = st.game() else { return };
             match mods::set_enabled(g, &id, on) {
-                Ok(()) => ui.set_message(SharedString::new()),
-                Err(e) => {
-                    ui.set_message(format!("Não deu para {} {id}: {e:#}", if on { "ligar" } else { "desligar" }).into());
-                    ui.set_message_error(true);
-                }
+                Ok(()) => {}
+                Err(e) => set_msg(&ui, format!("Não deu para {} {id}: {e:#}", if on { "ligar" } else { "desligar" }), true),
             }
             refresh_mods(&ui, &st);
         });
@@ -274,14 +298,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let st = state.borrow();
             let Some(g) = st.game() else { return };
             match mods::uninstall(g, &id) {
-                Ok(name) => {
-                    ui.set_message(format!("{name} foi para a Lixeira.").into());
-                    ui.set_message_error(false);
-                }
-                Err(e) => {
-                    ui.set_message(format!("Não deu para remover {id}: {e:#}").into());
-                    ui.set_message_error(true);
-                }
+                Ok(name) => set_msg(&ui, format!("{name} foi para a Lixeira."), false),
+                Err(e) => set_msg(&ui, format!("Não deu para remover {id}: {e:#}"), true),
             }
             refresh_mods(&ui, &st);
         });
@@ -338,8 +356,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
                 };
                 let _ = weak.upgrade_in_event_loop(move |ui| {
                     ui.set_busy(false);
-                    ui.set_message(msg.into());
-                    ui.set_message_error(is_err);
+                    set_msg(&ui, msg, is_err);
                     ui.invoke_filter_changed(ui.get_filter());
                 });
             });
