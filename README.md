@@ -1,59 +1,121 @@
+<div align="center">
+
+<img src="assets/linex-mods.svg" width="104" alt="linex-mods logo">
+
 # linex-mods
 
-Modding manager vibecoded that works like Vortex mod manager because i'm lazy to mod on Linux.
+**A native Linux mod manager for Steam games.**<br>
+Vibecoded, works like Vortex, exists because I'm lazy to mod on Linux.
 
-Native Linux app (Rust). It finds your Steam games, shows the mods of each one and installs
-new ones from an archive — the boring part of modding (unzip, find the right folder, copy)
-done for you.
+![Linux](https://img.shields.io/badge/platform-Linux-1d2026?style=flat-square&logo=linux&logoColor=white)
+![Rust](https://img.shields.io/badge/made%20with-Rust-1d2026?style=flat-square&logo=rust&logoColor=white)
+![Slint](https://img.shields.io/badge/UI-Slint-1d2026?style=flat-square)
+![License](https://img.shields.io/badge/license-GPL--3.0-4d8eff?style=flat-square)
+![Status](https://img.shields.io/badge/status-early%20but%20usable-e0b04a?style=flat-square)
 
-> Early work in progress. No releases yet. The interface is in Portuguese for now.
+<img src="docs/screenshots/main.png" alt="linex-mods showing Stardew Valley mods" width="860">
 
-## What works today
+</div>
 
-- Finds Steam libraries (native and Flatpak Steam) and the installed games that have a mod
-  loader: **MelonLoader**, **BepInEx** and **SMAPI** (Stardew Valley).
-- Lists mods with name, version and author (from SMAPI `manifest.json`).
-- Installs `.zip` archives (and `.7z`/`.rar` through `7z` or `bsdtar`), putting each file in
-  the right folder for the loader. Reinstalling a mod keeps its `config.json`.
-- Turns mods on and off without deleting them (moved to `.linex-disabled/` inside the game).
-- Its own window (dark, minimal), with the game icon and art from Steam's cache. Mods in
-  columns (name, author, version), search and an on/off filter.
-- Optional colors from your wallpaper (wallust/pywal palette), updated when it changes.
-- Checks the Nexus for newer versions of mods you got from there.
-- Warns when a mod was built for another loader (a MelonLoader mod in a BepInEx game).
-- Tells you when Proton will ignore the loader DLL and copies the launch option for you.
-- Remembers which files each mod installed, so removing a mod sends all of it to the trash
-  (shared libraries stay while another mod still uses them).
-- Nexus "Mod Manager Download" button (`nxm://` links), free accounts included. The API key
-  is kept in the system keyring (Secret Service). A click while the window is open goes to
-  the open window.
+## Why
 
-## Planned
+Modding a Windows game on Linux means unzipping archives, guessing which folder each file
+goes to, and then finding out Proton silently ignored the mod loader. linex-mods does the
+boring part: it finds your Steam games, installs mods in the right place, keeps track of
+what each mod put where, and tells you when something won't load.
 
-- Installing the loader itself (MelonLoader/BepInEx) from the app.
-- English interface.
-- Thunderstore support.
+It is a small native app (Rust + Slint): about 30 MB of RAM, no browser engine inside.
 
-Run `linex-mods` with no arguments to open the window.
+## Features
+
+**Mods**
+- Install from `.zip`, `.7z` or `.rar` with the **Add mod** button or by **dragging files**
+  onto the window.
+- The Nexus **"Mod Manager Download"** button opens straight in linex-mods (free accounts
+  included).
+- Turn mods on and off without deleting them; remove sends everything the mod installed to
+  the trash, keeping shared libraries other mods still use.
+- Reinstalling a SMAPI mod keeps its `config.json`.
+- Right-click a mod: enable/disable, show in folder, open its page, properties, remove.
+
+**Knowing what you have**
+- Icons, names, versions and authors from SMAPI and Thunderstore manifests and from the Nexus.
+- **Update check** for mods from the Nexus, including SMAPI mods matched through their
+  `UpdateKeys`.
+- Warns when a mod was built for a different loader (a MelonLoader mod in a BepInEx game).
+- Warns when Proton will ignore the loader DLL and copies the launch option that fixes it.
+
+**Loaders**
+- Detects **SMAPI**, **MelonLoader** and **BepInEx**.
+- Installs MelonLoader or BepInEx in Unity games with one click (BepInEx 5 for Mono games,
+  BepInEx 6 bleeding edge for IL2CPP games).
+
+**Looks**
+- Dark and minimal, with the game art from your Steam library.
+- Optional colors from your wallpaper (wallust or pywal palette), updated live.
+- English and Brazilian Portuguese, following the system language.
+
+<div align="center">
+<img src="docs/screenshots/wallust.png" alt="linex-mods with wallpaper colors" width="720">
+<br><sub>Wallpaper colors (wallust) on Megabonk with BepInEx mods.</sub>
+</div>
+
+## Supported games
+
+Any Steam game (native or Flatpak Steam, every library folder) that has, or can get, one of:
+
+| Loader | Games | Install from the app |
+| --- | --- | --- |
+| SMAPI | Stardew Valley | links to smapi.io |
+| MelonLoader | Unity games (Mono and IL2CPP) | yes |
+| BepInEx | Unity games (Mono and IL2CPP) | yes |
+
+Games that run through Proton need the loader DLL to be loaded from the game folder
+(`WINEDLLOVERRIDES="winhttp=n,b"` for BepInEx, `version=n,b` for MelonLoader). linex-mods
+checks for it and gives you the exact launch option.
+
+## Install
+
+No releases yet, so build it:
+
+```sh
+git clone https://github.com/Valcones47/linex-mods
+cd linex-mods
+cargo build --release
+./target/release/linex-mods
+```
+
+The first run adds linex-mods to your applications menu. To use the Nexus button, open
+**Settings**, paste your API key (nexusmods.com → Settings → API Keys) and turn on
+**website links**. The key is stored in the system keyring.
+
+Optional: `7zip` or `libarchive` for `.7z`/`.rar` archives, `wl-copy` (or `xclip`) for
+copying launch options.
 
 ## Command line
 
 ```
-linex-mods jogos
-linex-mods mods <game>
-linex-mods instalar <game> <archive>...
-linex-mods ligar <game> <mod>
-linex-mods desligar <game> <mod>
-linex-mods remover <game> <mod>
+linex-mods                      open the window
+linex-mods games                list games with a mod loader
+linex-mods mods <game>          list a game's mods
+linex-mods install <game> <file>...
+linex-mods enable|disable|remove <game> <mod>
+linex-mods unity                list Unity games without a loader
+linex-mods loader <game> melonloader|bepinex
 ```
 
 `<game>` is the Steam AppID or part of the name.
 
-## Build
+## Roadmap
 
-```
-cargo build --release
-```
+- Thunderstore downloads (r2modman-style).
+- Nexus collections.
+- Heroic and Lutris games.
+
+## Credits
+
+[Amethyst Mod Manager](https://github.com/ChrisDKN/Amethyst-Mod-Manager) was a great
+reference for how the Nexus links and loaders behave on Linux.
 
 ## License
 
