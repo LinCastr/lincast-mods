@@ -195,7 +195,7 @@ pub fn download(p: &Package, mut progress: impl FnMut(u64, u64)) -> Result<PathB
 
 /// Thunderstore's game list (the one r2modman uses), cached for a day: maps Steam AppIDs
 /// to communities ("peak", "riskofrain2"...).
-fn schema() -> Option<serde_json::Value> {
+pub fn schema() -> Option<serde_json::Value> {
     let p = cache_dir().join("schema.json");
     let fresh = fs::metadata(&p)
         .and_then(|m| m.modified())

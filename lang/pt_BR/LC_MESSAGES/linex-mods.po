@@ -224,3 +224,21 @@ msgstr "Baixar dependências que faltam"
 
 msgid "needs {}"
 msgstr "precisa de {}"
+
+msgid "FROM R2MODMAN"
+msgstr "DO R2MODMAN"
+
+msgid "Copies the profile's mods and settings into the game folder (BepInEx included), so the game runs modded straight from Steam."
+msgstr "Copia os mods e as configurações do perfil para a pasta do jogo (com o BepInEx), para o jogo abrir com mods direto pela Steam."
+
+msgid "Profile \"{}\" · {}"
+msgstr "Perfil \"{}\" · {}"
+
+msgid "Importing…"
+msgstr "Importando…"
+
+msgid "Import"
+msgstr "Importar"
+
+msgid "INSTALL A LOADER"
+msgstr "INSTALAR UM LOADER"

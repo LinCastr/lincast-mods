@@ -1142,7 +1142,51 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         ui.on_show_add_game(move || {
             if let Some(ui) = weak.upgrade() {
                 ui.set_unity_games(ModelRc::new(VecModel::from(unity_items())));
+                // r2modman profiles need Thunderstore's game list (network the first time).
+                let weak = weak.clone();
+                std::thread::spawn(move || {
+                    let list: Vec<(i32, String, String, usize)> =
+                        crate::r2modman::profiles().into_iter().map(|p| (p.game.appid as i32, p.game.name, p.name, p.mods)).collect();
+                    let _ = weak.upgrade_in_event_loop(move |ui| {
+                        let items: Vec<ProfileItem> = list
+                            .into_iter()
+                            .map(|(appid, game, profile, n)| ProfileItem {
+                                appid,
+                                game: game.into(),
+                                profile: profile.into(),
+                                count: if n == 1 { tr!("1 mod", "1 mod") } else { tr!("{n} mods", "{n} mods") }.into(),
+                                icon: load_image(steam::icon(appid as u32)),
+                            })
+                            .collect();
+                        ui.set_r2_profiles(ModelRc::new(VecModel::from(items)));
+                    });
+                });
             }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_import_profile(move |appid, profile| {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.set_installing(appid);
+            let weak = weak.clone();
+            std::thread::spawn(move || {
+                let _lock = INSTALL_LOCK.lock();
+                let found = crate::r2modman::profiles().into_iter().find(|p| p.game.appid as i32 == appid && p.name == profile.as_str());
+                let (msg, err) = match found.map(|p| (crate::r2modman::import(&p), p)) {
+                    Some((Ok(r), p)) => {
+                        let mut m = tr!("{} mods imported into {} from r2modman.", "{} mods importados do r2modman para o {}.", r.mods, p.game.name);
+                        if r.loader_installed {
+                            m.push_str(&tr!(" BepInEx was installed too.", " O BepInEx também foi instalado."));
+                        }
+                        (m, false)
+                    }
+                    Some((Err(e), _)) => (tr!("Import failed: {e:#}", "A importação falhou: {e:#}"), true),
+                    None => (tr!("Profile not found.", "Perfil não encontrado."), true),
+                };
+                log::line(&msg);
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_loader_finished(appid, msg.into(), err));
+            });
         });
     }
     {

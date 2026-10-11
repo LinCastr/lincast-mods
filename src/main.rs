@@ -15,6 +15,7 @@ mod log;
 mod meta;
 mod mods;
 mod nexus;
+mod r2modman;
 mod records;
 mod steam;
 mod theme;
@@ -37,6 +38,9 @@ const USAGE: &str = "usage:
   linex-mods search <game> nexus|ts [words]
                                   search mods on the Nexus or Thunderstore
   linex-mods deps <game>          list missing dependencies (SMAPI)
+  linex-mods r2modman             list r2modman profiles of installed games
+  linex-mods r2modman import <game> [profile]
+                                  copy an r2modman profile (with BepInEx) into the game
   linex-mods others               list Heroic and Lutris games (detection only for now)
   linex-mods updates <game>       check the game's Nexus mods for new versions
   linex-mods ts install <game> <package>
@@ -179,6 +183,29 @@ fn run(args: &[String]) -> Result<()> {
                     })
                     .collect();
                 println!("{m}: {}", names.join(", "));
+            }
+        }
+        ("r2modman", []) => {
+            let list = r2modman::profiles();
+            if list.is_empty() {
+                println!("{}", tr!("No r2modman profiles found.", "Nenhum perfil do r2modman encontrado."));
+            }
+            for p in list {
+                println!("{:>8}  {}  [{}]  {} mods", p.game.appid, p.game.name, p.name, p.mods);
+            }
+        }
+        ("r2modman", ["import", q, rest @ ..]) => {
+            let q = q.to_lowercase();
+            let profile = rest.first().map(|s| s.to_lowercase());
+            let p = r2modman::profiles()
+                .into_iter()
+                .filter(|p| p.game.appid.to_string() == q || p.game.name.to_lowercase().contains(&q))
+                .find(|p| profile.as_ref().is_none_or(|n| p.name.to_lowercase() == *n))
+                .with_context(|| tr!("no r2modman profile for {q}", "nenhum perfil do r2modman para {q}"))?;
+            let r = r2modman::import(&p)?;
+            println!("{}", tr!("{} mods imported into {} from the \"{}\" profile.", "{} mods importados para o {} do perfil \"{}\".", r.mods, p.game.name, p.name));
+            if r.loader_installed {
+                println!("{}", tr!("BepInEx was installed too.", "O BepInEx também foi instalado."));
             }
         }
         ("others", []) => {
