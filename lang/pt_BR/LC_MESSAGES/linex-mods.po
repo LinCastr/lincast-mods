@@ -215,3 +215,6 @@ msgstr "Buscando…"
 
 msgid "Cancel"
 msgstr "Cancelar"
+
+msgid "Update all ({})"
+msgstr "Atualizar todos ({})"

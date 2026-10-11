@@ -16,7 +16,7 @@ struct State {
     games: Vec<Game>,
     current: Option<usize>,
     /// Newer versions on the Nexus: (appid, mod_id) → version. Checked once per game.
-    updates: std::collections::HashMap<(u32, u64), String>,
+    updates: std::collections::HashMap<(u32, String), String>,
     checked: std::collections::HashSet<u32>,
     icons: RefCell<std::collections::HashMap<PathBuf, Image>>,
     /// Last "Browse" results, and a counter so an old search can't overwrite a newer one.
@@ -111,6 +111,11 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
     };
     let mut all = mods::list(g);
     let community = crate::thunderstore::community_cached(g.steam.appid);
+    let ts_updates = all
+        .iter()
+        .filter(|m| update_key(m).is_some_and(|k| k.starts_with("ts:") && state.updates.contains_key(&(g.steam.appid, k))))
+        .count();
+    ui.set_ts_updates(ts_updates as i32);
     if ui.get_sort_desc() {
         all.reverse();
     }
@@ -128,12 +133,7 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
             _ => true,
         })
         .map(|m| {
-            let update = m
-                .nexus_key
-                .as_ref()
-                .and_then(|(_, id)| state.updates.get(&(g.steam.appid, *id)))
-                .cloned()
-                .unwrap_or_default();
+            let update = update_key(&m).and_then(|k| state.updates.get(&(g.steam.appid, k))).cloned().unwrap_or_default();
             let icon_path = m
                 .icon_src
                 .as_ref()
@@ -201,10 +201,19 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     }
 }
 
-/// Icons and Nexus info for the game's mods, once per game per session, off the UI
-/// thread: local icon.png thumbnails first, then Nexus version and picture (cached
-/// for 6 h; without an API key only the cache is used). Ends by reporting mods with
-/// a newer version.
+/// Key of a mod in `State::updates`: its Thunderstore package or its Nexus ID.
+fn update_key(m: &mods::Mod) -> Option<String> {
+    match (&m.ts_key, &m.nexus_key) {
+        (Some((ns, n)), _) => Some(format!("ts:{}-{}", ns, n).to_lowercase()),
+        (_, Some((_, id))) => Some(format!("nexus:{id}")),
+        _ => None,
+    }
+}
+
+/// Icons and versions of the game's mods, once per game per session, off the UI thread:
+/// local icon.png thumbnails first, then Thunderstore versions (the community's package
+/// list, no key needed) and Nexus version and picture (cached for 6 h; without an API
+/// key only the cache is used). Ends by reporting mods with a newer version.
 fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
     if !state.checked.insert(appid) && !force {
         return;
@@ -217,8 +226,13 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
     let Some(g) = state.game() else { return };
     let list = mods::list(g);
     let locals: Vec<PathBuf> = list.iter().filter_map(|m| m.icon_src.clone()).collect();
+    let packages: Vec<(String, Option<String>)> = list
+        .iter()
+        .filter_map(|m| m.ts_key.as_ref().map(|(ns, n)| (format!("{ns}-{n}").to_lowercase(), m.version.clone())))
+        .collect();
     let remotes: Vec<(String, u64, Option<String>)> = list
         .iter()
+        .filter(|m| m.ts_key.is_none())
         .filter_map(|m| m.nexus_key.clone().map(|(d, id)| (d, id, m.version.clone())))
         .collect();
     let weak = ui.as_weak();
@@ -229,25 +243,26 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
         if locals.iter().filter(|p| crate::meta::ensure_local_icon(p).is_some()).count() > 0 {
             ping(&weak, "{}".into());
         }
-        let total = remotes.len();
-        let key = nexus::load_key();
-        if force && (remotes.is_empty() || key.is_none()) {
-            let msg = if key.is_none() {
-                tr!("Add your Nexus API key in Settings to check for updates.", "Coloque a sua chave da API do Nexus em Configurações para buscar atualizações.")
-            } else {
-                tr!("None of these mods has a Nexus link to check.", "Nenhum destes mods tem link do Nexus para conferir.")
-            };
-            let _ = weak.upgrade_in_event_loop(move |ui| {
-                ui.set_checking(false);
-                set_msg(&ui, msg, key.is_none());
-            });
-            return;
-        }
-        if remotes.is_empty() {
-            return;
-        }
-        let mut info = crate::meta::load_info();
         let mut found = serde_json::Map::new();
+        if !packages.is_empty()
+            && let Some(c) = crate::thunderstore::community_for(appid)
+        {
+            match crate::browse::ts_latest(&c) {
+                Ok(latest) => {
+                    for (full, local) in &packages {
+                        if let (Some(remote), Some(local)) = (latest.get(full), local)
+                            && nexus::is_newer(remote, local)
+                        {
+                            found.insert(format!("ts:{full}"), remote.clone().into());
+                        }
+                    }
+                }
+                Err(e) => log::line(&format!("thunderstore {c}: {e:#}")),
+            }
+        }
+        let total = remotes.len() + packages.len();
+        let key = nexus::load_key();
+        let mut info = crate::meta::load_info();
         let mut fresh_icons = 0;
         for (domain, id, local) in &remotes {
             let k = crate::meta::info_key(domain, *id);
@@ -272,26 +287,39 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
             let icon = crate::meta::nexus_icon(domain, *id);
             if !icon.is_file()
                 && let Some(url) = &i.picture
-                && crate::meta::fetch_nexus_icon(url, &icon).is_ok() {
+                && crate::meta::fetch_nexus_icon(url, &icon).is_ok()
+            {
                 fresh_icons += 1;
                 if fresh_icons % 12 == 0 {
                     ping(&weak, "{}".into());
                 }
             }
             if let (Some(remote), Some(local)) = (&i.version, local)
-                && nexus::is_newer(remote, local) {
-                found.insert(id.to_string(), remote.clone().into());
+                && nexus::is_newer(remote, local)
+            {
+                found.insert(format!("nexus:{id}"), remote.clone().into());
             }
         }
-        crate::meta::save_info(&info);
+        if !remotes.is_empty() {
+            crate::meta::save_info(&info);
+        }
         let n = found.len();
         ping(&weak, serde_json::Value::Object(found).to_string());
         if force {
+            let no_key = key.is_none() && !remotes.is_empty();
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_checking(false);
-                if n == 0 {
-                    set_msg(&ui, tr!("All {total} mods linked to the Nexus are up to date.", "Os {total} mods ligados ao Nexus estão atualizados."), false);
+                if n > 0 {
+                    return;
                 }
+                let msg = if total == 0 {
+                    tr!("None of these mods has a Nexus or Thunderstore link to check.", "Nenhum destes mods tem link do Nexus ou da Thunderstore para conferir.")
+                } else if no_key {
+                    tr!("Add your Nexus API key in Settings to check the Nexus mods.", "Coloque a sua chave da API do Nexus em Configurações para conferir os mods do Nexus.")
+                } else {
+                    tr!("All {total} mods with a site link are up to date.", "Os {total} mods com link de site estão atualizados.")
+                };
+                set_msg(&ui, msg, no_key);
             });
         }
     });
@@ -699,6 +727,40 @@ fn install_package(ui: &AppWindow, r: crate::thunderstore::PackageRef, known: Op
             },
             Err(e) => finish(&weak, appid, tr!("{}: {e:#}", "{}: {e:#}", r.full_name()), true),
         }
+    });
+}
+
+/// Updates Thunderstore packages one after the other (each with its new dependencies).
+fn update_packages(ui: &AppWindow, game: Game, refs: Vec<crate::thunderstore::PackageRef>) {
+    let weak = ui.as_weak();
+    ui.set_busy(true);
+    std::thread::spawn(move || {
+        let appid = game.steam.appid as i32;
+        let (mut done, mut failed) = (0, Vec::new());
+        for r in &refs {
+            let w2 = weak.clone();
+            let res = crate::thunderstore::install(&game, r, |step| {
+                let txt = tr!("Updating {step}…", "Atualizando {step}…");
+                let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
+            });
+            match res {
+                Ok(_) => done += 1,
+                Err(e) => {
+                    log::line(&format!("update {}: {e:#}", r.full_name()));
+                    failed.push(r.name.replace('_', " "));
+                }
+            }
+        }
+        let (msg, err) = match (done, failed.is_empty()) {
+            (_, true) if done == 1 => (tr!("1 mod updated.", "1 mod atualizado."), false),
+            (_, true) => (tr!("{done} mods updated.", "{done} mods atualizados."), false),
+            _ => (tr!("{done} updated; failed: {}", "{done} atualizados; falharam: {}", failed.join(", ")), true),
+        };
+        log::line(&msg);
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_busy(false);
+            ui.invoke_nxm_finished(appid, msg.into(), err);
+        });
     });
 }
 
@@ -1208,9 +1270,25 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let Some(ui) = weak.upgrade() else { return };
             set_msg(&ui, msg, err);
             let mut st = state.borrow_mut();
-            if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
+            if let Some(g) = st.game().filter(|g| g.steam.appid as i32 == appid).cloned() {
+                // Updated mods drop their "→ new version" mark.
+                for m in mods::list(&g) {
+                    if let (Some(k), Some(v)) = (update_key(&m), &m.version)
+                        && st.updates.get(&(g.steam.appid, k.clone())).is_some_and(|new| !nexus::is_newer(new, v))
+                    {
+                        st.updates.remove(&(g.steam.appid, k));
+                    }
+                }
                 refresh_mods(&ui, &st);
                 browse_tab::reclassify(&ui, &mut st);
+                // A new icon.png (installed or updated package) needs its thumbnail.
+                let icons: Vec<PathBuf> = mods::list(&g).into_iter().filter_map(|m| m.icon_src).collect();
+                let weak = ui.as_weak();
+                std::thread::spawn(move || {
+                    if icons.iter().filter(|p| crate::meta::ensure_local_icon(p).is_some()).count() > 0 {
+                        let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_updates_found(appid, "{}".into()));
+                    }
+                });
             }
         });
     }
@@ -1318,6 +1396,42 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             }
         });
     }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_update_mod(move |id| {
+            let Some(ui) = weak.upgrade() else { return };
+            let st = state.borrow();
+            let Some(g) = st.game().cloned() else { return };
+            let Some(m) = mods::list(&g).into_iter().find(|m| m.id == id.as_str()) else { return };
+            match (&m.ts_key, &m.nexus_key) {
+                (Some((ns, n)), _) => {
+                    let r = crate::thunderstore::PackageRef { namespace: ns.clone(), name: n.clone(), version: None };
+                    update_packages(&ui, g, vec![r]);
+                }
+                (_, Some((d, nid))) => {
+                    open(&nexus::mod_page(d, *nid));
+                    set_msg(&ui, tr!("On the page, click \"Mod Manager Download\": the new version comes back here and installs.", "Na página, clique em \"Mod Manager Download\": a versão nova volta para cá e instala."), false);
+                }
+                _ => {}
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_update_all(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let st = state.borrow();
+            let Some(g) = st.game().cloned() else { return };
+            let refs: Vec<_> = mods::list(&g)
+                .into_iter()
+                .filter(|m| update_key(m).is_some_and(|k| k.starts_with("ts:") && st.updates.contains_key(&(g.steam.appid, k))))
+                .filter_map(|m| m.ts_key.map(|(ns, n)| crate::thunderstore::PackageRef { namespace: ns, name: n, version: None }))
+                .collect();
+            if !refs.is_empty() {
+                update_packages(&ui, g, refs);
+            }
+        });
+    }
     ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
     ui.on_open_url(|u| open(&u));
     {
@@ -1327,15 +1441,13 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let mut st = state.borrow_mut();
             let map: std::collections::HashMap<String, String> = serde_json::from_str(&json).unwrap_or_default();
             let n = map.len();
-            for (id, v) in map {
-                if let Ok(id) = id.parse() {
-                    st.updates.insert((appid as u32, id), v);
-                }
+            for (k, v) in map {
+                st.updates.insert((appid as u32, k), v);
             }
             if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
                 refresh_mods(&ui, &st);
                 if n > 0 {
-                    set_msg(&ui, if n == 1 { tr!("1 mod has a new version on the Nexus.", "1 mod tem versão nova no Nexus.") } else { tr!("{n} mods have a new version on the Nexus.", "{n} mods têm versão nova no Nexus.") }, false);
+                    set_msg(&ui, if n == 1 { tr!("1 mod has a new version.", "1 mod tem versão nova.") } else { tr!("{n} mods have a new version.", "{n} mods têm versão nova.") }, false);
                 }
             }
         });

@@ -203,6 +203,14 @@ fn parse_ts(community: &str, text: &str) -> Result<Vec<TsPackage>> {
         .collect())
 }
 
+/// Latest version of every package in the community: "namespace-name" (lowercase) → version.
+pub fn ts_latest(community: &str) -> Result<HashMap<String, String>> {
+    Ok(ts_packages(community)?
+        .into_iter()
+        .map(|p| (p.listing.id.to_lowercase(), p.listing.version))
+        .collect())
+}
+
 pub fn ts_search(community: &str, query: &str, sort: Sort, show_hidden: bool) -> Result<Vec<Listing>> {
     let q = normalize(query);
     let mut list: Vec<TsPackage> = ts_packages(community)?

@@ -442,6 +442,7 @@ component ModRow inherits Rectangle {
     callback open-url(string);
     callback open-folder();
     callback properties();
+    callback update();
     property <length> menu-x;
     property <length> menu-y;
     // First click on "Remove" asks for confirmation; it goes away by itself after 3 s.
@@ -584,7 +585,7 @@ component ModRow inherits Rectangle {
             }
             up := TouchArea {
                 mouse-cursor: pointer;
-                clicked => { root.open-url(item.page); }
+                clicked => { root.update(); }
             }
         }
         Rectangle {
@@ -1070,6 +1071,8 @@ export component AppWindow inherits Window {
     in property <bool> drop-hover;
     in-out property <bool> sort-desc;
     in property <bool> checking;
+    // Thunderstore mods with a newer version (they update in one click).
+    in property <int> ts-updates;
     in-out property <bool> props-open;
     in property <string> props-title;
     in property <[PropRow]> props;
@@ -1125,6 +1128,8 @@ export component AppWindow inherits Window {
     callback open-mod-folder(string);
     callback show-properties(string);
     callback check-updates();
+    callback update-mod(string);
+    callback update-all();
     callback nxm-received(string);
     callback open-panel();
     callback clear-notices();
@@ -1377,6 +1382,13 @@ export component AppWindow inherits Window {
                     enabled: !root.checking;
                     clicked => { root.check-updates(); }
                 }
+                if root.ts-updates > 0: Button {
+                    height: 30px;
+                    text: @tr("Update all ({})", root.ts-updates);
+                    primary: true;
+                    enabled: !root.busy;
+                    clicked => { root.update-all(); }
+                }
                 Rectangle { }
                 Text {
                     text: root.counts;
@@ -1481,6 +1493,7 @@ export component AppWindow inherits Window {
                         open-url(u) => { root.open-url(u); }
                         open-folder => { root.open-mod-folder(m.id); }
                         properties => { root.show-properties(m.id); }
+                        update => { root.update-mod(m.id); }
                     }
                     if root.mods.length == 0 && root.current >= 0: Text {
                         text: root.filter != "" ? @tr("No mod with that name.")
