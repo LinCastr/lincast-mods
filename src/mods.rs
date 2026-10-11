@@ -140,9 +140,14 @@ pub fn lenient_json(src: &str) -> Option<serde_json::Value> {
     // Comma before } or ].
     let mut clean = String::with_capacity(out.len());
     let bytes: Vec<char> = out.chars().collect();
-    let mut in_str = false;
+    let (mut in_str, mut escaped) = (false, false);
     for (i, &c) in bytes.iter().enumerate() {
-        if c == '"' && (i == 0 || bytes[i - 1] != '\\') {
+        // Track escapes properly: in "C:\\" the last quote does close the string.
+        if in_str && escaped {
+            escaped = false;
+        } else if in_str && c == '\\' {
+            escaped = true;
+        } else if c == '"' {
             in_str = !in_str;
         }
         if c == ',' && !in_str {
@@ -382,5 +387,12 @@ mod tests {
         .unwrap();
         assert_eq!(json_field(&v, "name").as_deref(), Some("Mod // não é comentário"));
         assert_eq!(json_field(&v, "Version").as_deref(), Some("1.0"));
+    }
+
+    #[test]
+    fn backslash_at_the_end_of_a_string() {
+        let v = lenient_json(r#"{ "Path": "C:\\", "Name": "A, B", "Version": "2.0", }"#).unwrap();
+        assert_eq!(json_field(&v, "Path").as_deref(), Some("C:\\"));
+        assert_eq!(json_field(&v, "Version").as_deref(), Some("2.0"));
     }
 }
