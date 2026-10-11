@@ -285,6 +285,29 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// Para qual loader as DLLs do arquivo foram feitas. Uma DLL .NET guarda os nomes
+/// dos assemblies que usa em texto puro, então basta procurar os nomes: mod de
+/// MelonLoader cita "MelonLoader", de BepInEx cita "BepInEx". Ambíguo = None.
+fn dll_loader(root: &Path) -> Option<Loader> {
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    let has = |data: &[u8], needle: &[u8]| data.windows(needle.len()).any(|w| w == needle);
+    let (mut melon, mut bepinex, mut smapi) = (0, 0, 0);
+    for f in files.iter().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("dll"))) {
+        let Ok(data) = fs::read(f) else { continue };
+        let (m, b, s) = (has(&data, b"MelonLoader"), has(&data, b"BepInEx"), has(&data, b"StardewModdingAPI"));
+        melon += (m && !b) as u32;
+        bepinex += (b && !m) as u32;
+        smapi += s as u32;
+    }
+    match (melon > 0, bepinex > 0, smapi > 0) {
+        (true, false, false) => Some(Loader::MelonLoader),
+        (false, true, false) => Some(Loader::BepInEx),
+        (false, false, true) => Some(Loader::Smapi),
+        _ => None,
+    }
+}
+
 /// Nome "limpo" do arquivo: tira a extensão e o sufixo de IDs do Nexus
 /// ("Mod Legal-123-1-0-1700000000" → "Mod Legal").
 pub fn clean_stem(archive: &Path) -> String {
@@ -309,6 +332,14 @@ pub fn install_archive(
     let tmp = TempDir::new()?;
     extract(archive, &tmp.0)?;
     let stem = clean_stem(archive);
+    let warning = dll_loader(&tmp.0).filter(|l| *l != game.loader).map(|l| {
+        format!(
+            "este mod foi feito para {}, mas o jogo usa {}: ele não vai carregar. Procure a versão para {} na página do mod.",
+            l.label(),
+            game.loader.label(),
+            game.loader.label()
+        )
+    });
     let files = match game.loader {
         Loader::Smapi => install_smapi(game, &tmp.0, &stem),
         Loader::MelonLoader | Loader::BepInEx => install_unity(game, &tmp.0, &stem),
@@ -319,6 +350,7 @@ pub fn install_archive(
         archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
         nexus,
         installed_at: records::now(),
+        warning,
     };
     let mut recs = records::load(game.steam.appid);
     recs.put(rec.clone());

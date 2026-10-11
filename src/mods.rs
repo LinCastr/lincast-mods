@@ -18,6 +18,28 @@ pub struct Mod {
     pub from_nexus: bool,
 }
 
+/// "GrowableMoondewNectarMod" → "Growable Moondew Nectar Mod", "SR2_INF" → "SR2 INF".
+/// Só para DLL sem registro (instalada à mão): o nome real do mod não está em lugar nenhum.
+fn humanize(stem: &str) -> String {
+    let chars: Vec<char> = stem.chars().collect();
+    let mut out = String::new();
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '_' || c == '-' {
+            out.push(' ');
+            continue;
+        }
+        if i > 0 && c.is_uppercase() {
+            let prev = chars[i - 1];
+            let next_lower = chars.get(i + 1).is_some_and(|n| n.is_lowercase());
+            if prev.is_lowercase() || (prev.is_uppercase() && next_lower) {
+                out.push(' ');
+            }
+        }
+        out.push(c);
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Arquivos que acompanham mods mas não são mods.
 fn is_junk(name: &str) -> bool {
     let n = name.to_lowercase();
@@ -135,14 +157,14 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
             if !path.is_file() || !m.id.to_lowercase().ends_with(".dll") {
                 return None;
             }
-            m.name = m.id[..m.id.len() - 4].to_string();
+            m.name = humanize(&m.id[..m.id.len() - 4]);
         }
         Loader::BepInEx => {
             if path.is_file() {
                 if !m.id.to_lowercase().ends_with(".dll") {
                     return None;
                 }
-                m.name = m.id[..m.id.len() - 4].to_string();
+                m.name = humanize(&m.id[..m.id.len() - 4]);
             }
         }
         Loader::Smapi => {
@@ -268,6 +290,14 @@ pub fn uninstall(game: &Game, id: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nomes_de_dll_legiveis() {
+        assert_eq!(humanize("GrowableMoondewNectarMod"), "Growable Moondew Nectar Mod");
+        assert_eq!(humanize("SR2_INF"), "SR2 INF");
+        assert_eq!(humanize("RichPresenceMod"), "Rich Presence Mod");
+        assert_eq!(humanize("UIInfoSuite"), "UI Info Suite");
+    }
 
     #[test]
     fn manifest_com_comentario_e_virgula() {

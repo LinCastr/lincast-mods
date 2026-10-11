@@ -58,6 +58,9 @@ fn run(args: &[String]) -> Result<()> {
                 for n in rec.files {
                     println!("  → {n}");
                 }
+                if let Some(w) = rec.warning {
+                    println!("  aviso: {w}");
+                }
             }
         }
         ["ligar", q, id] => mods::set_enabled(&game(q)?, id, true)?,

@@ -36,18 +36,43 @@ fn proton_override_missing(g: &Game) -> Option<String> {
     Some(format!("WINEDLLOVERRIDES=\"{dll}=n,b\" %command%"))
 }
 
-fn status_of(g: &Game) -> (String, bool) {
+/// Linha de estado do jogo, se é aviso, e a opção de inicialização a copiar (se faltar).
+fn status_of(g: &Game) -> (String, bool, String) {
     if g.installed_loader.is_none() {
-        return (format!("{} não está instalado: os mods não vão carregar.", g.loader.label()), true);
+        return (format!("{} não está instalado: os mods não vão carregar.", g.loader.label()), true, String::new());
     }
     if let Some(opt) = proton_override_missing(g) {
         return (
-            format!("O Proton vai ignorar o {}. Nas opções de inicialização do jogo no Steam, use: {opt}", g.loader.label()),
+            format!("O Proton vai ignorar o {}. Copie a opção e cole em Steam → Propriedades → Opções de inicialização.", g.loader.label()),
             true,
+            opt,
         );
     }
     let proton = if g.steam.uses_proton() { " · Proton" } else { "" };
-    (format!("{}{proton}", g.loader.label()), false)
+    (format!("{}{proton}", g.loader.label()), false, String::new())
+}
+
+/// Copia para a área de transferência (wl-copy no Wayland, xclip/xsel no X11).
+fn copy_text(text: &str) -> bool {
+    use std::io::Write;
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let cmds: &[(&str, &[&str])] = if wayland {
+        &[("wl-copy", &[]), ("xclip", &["-selection", "clipboard"])]
+    } else {
+        &[("xclip", &["-selection", "clipboard"]), ("xsel", &["--clipboard", "--input"])]
+    };
+    for (cmd, args) in cmds {
+        let child = Command::new(cmd).args(*args).stdin(std::process::Stdio::piped()).spawn();
+        if let Ok(mut c) = child {
+            if let Some(mut stdin) = c.stdin.take() {
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            if c.wait().is_ok_and(|s| s.success()) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn load_image(p: Option<PathBuf>) -> Image {
@@ -99,9 +124,10 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     state.current = Some(i);
     let Some(g) = state.game() else { return };
     ui.set_game_name(g.steam.name.clone().into());
-    let (status, warn) = status_of(g);
+    let (status, warn, fix) = status_of(g);
     ui.set_game_status(status.into());
     ui.set_game_warning(warn);
+    ui.set_game_fix(fix.into());
     let appid = g.steam.appid;
     ui.set_hero(load_image(steam::art(appid, "library_hero.jpg").or_else(|| steam::art(appid, "library_hero_blur.jpg"))));
     ui.set_logo(load_image(steam::art(g.steam.appid, "logo.png")));
@@ -261,7 +287,10 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
             Ok(rec) => {
                 let _ = std::fs::remove_file(&dl.path);
-                finish(&weak, format!("Instalado: {}", rec.name), false)
+                match rec.warning {
+                    Some(w) => finish(&weak, format!("{} instalado, mas {w}", rec.name), true),
+                    None => finish(&weak, format!("Instalado: {}", rec.name), false),
+                }
             }
             Err(e) => finish(
                 &weak,
@@ -423,7 +452,10 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
                 for f in &files {
                     let name = install::clean_stem(f);
                     match install::install_archive(&game, f, None, None) {
-                        Ok(_) => ok.push(name),
+                        Ok(rec) => match rec.warning {
+                            Some(w) => errors.push(format!("{name} instalado, mas {w}")),
+                            None => ok.push(name),
+                        },
                         Err(e) => errors.push(format!("{name}: {e:#}")),
                     }
                 }
@@ -520,6 +552,42 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
     ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
+    {
+        let weak = ui.as_weak();
+        ui.on_copy_fix(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if copy_text(&ui.get_game_fix()) {
+                set_msg(&ui, "Copiado. Cole nas opções de inicialização do jogo e reabra o jogo.", false);
+            } else {
+                set_msg(&ui, format!("Não deu para copiar (falta o wl-copy ou xclip). Use: {}", ui.get_game_fix()), true);
+            }
+        });
+    }
+    // Atualiza a lista quando a pasta de mods muda por fora (gerenciador de
+    // arquivos, outro programa): confere a cada 2 s.
+    let watch_timer = slint::Timer::default();
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        let last = RefCell::new(None);
+        watch_timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(2), move || {
+            let st = state.borrow();
+            let Some(g) = st.game() else { return };
+            let stamp = |p: PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+            let now = (
+                g.steam.appid,
+                stamp(g.mods_dir()),
+                stamp(g.disabled_dir()),
+                stamp(crate::records::data_dir().join(format!("{}.json", g.steam.appid))),
+            );
+            let changed = last.borrow().as_ref().is_some_and(|l| *l != now);
+            *last.borrow_mut() = Some(now);
+            if changed {
+                if let Some(ui) = weak.upgrade() {
+                    refresh_mods(&ui, &st);
+                }
+            }
+        });
+    }
 
     // Links que chegarem por outra instância (clique no site com a janela aberta).
     {

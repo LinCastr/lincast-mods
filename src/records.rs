@@ -26,6 +26,9 @@ pub struct Record {
     pub nexus: Option<NexusSource>,
     #[serde(default)]
     pub installed_at: u64,
+    /// Aviso da instalação (ex.: mod feito para outro loader). Não é salvo.
+    #[serde(skip)]
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -107,7 +110,7 @@ mod tests {
     use super::*;
 
     fn rec(name: &str, files: &[&str]) -> Record {
-        Record { name: name.into(), files: files.iter().map(|f| f.to_string()).collect(), archive: String::new(), nexus: None, installed_at: 0 }
+        Record { name: name.into(), files: files.iter().map(|f| f.to_string()).collect(), archive: String::new(), nexus: None, installed_at: 0, warning: None }
     }
 
     #[test]

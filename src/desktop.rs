@@ -48,13 +48,34 @@ fn desktop_exec_ok() -> bool {
         .is_some_and(|p| std::path::Path::new(p).is_file())
 }
 
-/// Ao abrir: se o atalho existe mas aponta para um programa que sumiu (mudou de
-/// lugar), regrava com o caminho atual. Só nesse caso: regravar sempre fazia
-/// qualquer cópia aberta (ex.: a de desenvolvimento) tomar os links para si.
+const ICON_SVG: &str = include_str!("../assets/linex-mods.svg");
+
+fn icon_path() -> std::path::PathBuf {
+    apps_dir().parent().unwrap().join("icons/hicolor/scalable/apps/linex-mods.svg")
+}
+
+/// Ao abrir: cria o atalho no menu de aplicativos (com ícone) se ainda não existe.
+/// Se existe mas aponta para um programa que sumiu (mudou de lugar), regrava com o
+/// caminho atual. Só nesses casos: regravar sempre fazia qualquer cópia aberta
+/// (ex.: a de desenvolvimento) tomar os links para si.
 pub fn refresh_desktop_file() {
-    if apps_dir().join(DESKTOP_ID).is_file() && !desktop_exec_ok() {
+    let icon = icon_path();
+    if !icon.is_file() {
+        let _ = fs::create_dir_all(icon.parent().unwrap());
+        let _ = fs::write(&icon, ICON_SVG);
+    }
+    let file = apps_dir().join(DESKTOP_ID);
+    let exists = file.is_file();
+    // Atalho de versão antiga (ícone genérico): só troca o ícone, mantém o resto.
+    if let Ok(txt) = fs::read_to_string(&file) {
+        if txt.contains("Icon=applications-games") {
+            let _ = fs::write(&file, txt.replace("Icon=applications-games", "Icon=linex-mods"));
+        }
+    }
+    if !exists || !desktop_exec_ok() {
         if let Ok(exe) = exe_path() {
             let _ = write_desktop(&exe);
+            let _ = Command::new("update-desktop-database").arg(apps_dir()).status();
         }
     }
 }
@@ -73,7 +94,7 @@ fn write_desktop(exe: &str) -> Result<()> {
              Name=linex-mods\n\
              Comment=Gerenciador de mods\n\
              Exec={exec} %u\n\
-             Icon=applications-games\n\
+             Icon=linex-mods\n\
              Terminal=false\n\
              Categories=Game;Utility;\n\
              MimeType=x-scheme-handler/nxm;\n\

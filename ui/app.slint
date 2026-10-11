@@ -537,6 +537,7 @@ export component AppWindow inherits Window {
     in property <string> game-name;
     in property <string> game-status;
     in property <bool> game-warning;
+    in property <string> game-fix;
     in property <string> counts;
     in property <image> hero;
     in property <image> logo;
@@ -562,6 +563,7 @@ export component AppWindow inherits Window {
     callback add-mod();
     callback play();
     callback open-folder();
+    callback copy-fix();
     callback filter-changed(string);
     callback show-settings();
     callback save-key(string);
@@ -679,11 +681,24 @@ export component AppWindow inherits Window {
                             font-size: 28px;
                             font-weight: 700;
                         }
-                        Text {
-                            text: root.game-status;
-                            color: root.game-warning ? Theme.warn : Theme.dim;
-                            font-size: 12px;
-                            wrap: word-wrap;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            Text {
+                                text: root.game-status;
+                                color: root.game-warning ? Theme.warn : Theme.dim;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 0;
+                                max-width: self.preferred-width;
+                            }
+                            if root.game-fix != "": LinkText {
+                                text: "Copiar opção";
+                                vertical-alignment: center;
+                                horizontal-stretch: 0;
+                                clicked => { root.copy-fix(); }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
                         }
                     }
                     VerticalLayout {
