@@ -624,7 +624,7 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
             Ok(rec) => {
                 let _ = std::fs::remove_file(&dl.path);
-                match rec.warning {
+                match rec.warning.or_else(|| twin_warning(&game, &rec.name, mods::Source::Nexus)) {
                     Some(w) => finish(&weak, tr!("{} installed, but {w}", "{} instalado, mas {w}", rec.name), true),
                     None => finish(&weak, tr!("Installed: {}", "Instalado: {}", rec.name), false),
                 }
@@ -689,8 +689,9 @@ fn install_package(ui: &AppWindow, r: crate::thunderstore::PackageRef, known: Op
                     } else {
                         tr!("Installed in {game_name}: {}", "Instalado em {game_name}: {}", rec.name)
                     };
-                    match recs.iter().find_map(|r| r.warning.clone()) {
-                        Some(w) => finish(&weak, appid, format!("{msg}. {w}"), true),
+                    let twin = twin_warning(game, &rec.name, mods::Source::Thunderstore);
+                    match recs.iter().find_map(|r| r.warning.clone()).or(twin) {
+                        Some(w) => finish(&weak, appid, tr!("{msg}, but {w}", "{msg}, mas {w}"), true),
                         None => finish(&weak, appid, msg, false),
                     }
                 }
@@ -699,6 +700,19 @@ fn install_package(ui: &AppWindow, r: crate::thunderstore::PackageRef, known: Op
             Err(e) => finish(&weak, appid, tr!("{}: {e:#}", "{}: {e:#}", r.full_name()), true),
         }
     });
+}
+
+/// After an install: another mod with the same name from a different site (the same
+/// mod twice usually means conflicts).
+fn twin_warning(game: &Game, installed_name: &str, from: mods::Source) -> Option<String> {
+    let key = crate::browse::normalize(installed_name);
+    let twin = mods::list(game).into_iter().find(|m| m.source != from && crate::browse::normalize(&m.name) == key)?;
+    let name = twin.name;
+    Some(match twin.source {
+        mods::Source::Nexus => tr!("\"{name}\" from the Nexus is also installed: keep only one", "o \"{name}\" do Nexus também está instalado: deixe só um"),
+        mods::Source::Thunderstore => tr!("\"{name}\" from Thunderstore is also installed: keep only one", "o \"{name}\" da Thunderstore também está instalado: deixe só um"),
+        mods::Source::Unknown => tr!("\"{name}\" is also installed: keep only one", "o \"{name}\" também está instalado: deixe só um"),
+    })
 }
 
 /// Nexus key status, read off the UI thread (the keyring can be slow).
