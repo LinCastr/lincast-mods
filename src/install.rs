@@ -97,25 +97,30 @@ pub fn extract(archive: &Path, dest: &Path) -> Result<()> {
     }
 }
 
+/// Regular files under `dir`. Symlinks and special files are skipped: bsdtar extracts
+/// them from .rar/.7z, and following one would copy files from outside the archive
+/// (a link to ~/.ssh) or block forever (a FIFO).
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = fs::read_dir(dir) else { return };
     for e in rd.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            walk(&p, out);
-        } else {
-            out.push(p);
+        let Ok(t) = e.file_type() else { continue };
+        if t.is_dir() {
+            walk(&e.path(), out);
+        } else if t.is_file() {
+            out.push(e.path());
         }
     }
 }
 
+/// Copies a file or folder, skipping symlinks and special files (see `walk`).
 fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
-    if src.is_dir() {
+    let t = fs::symlink_metadata(src)?.file_type();
+    if t.is_dir() {
         fs::create_dir_all(dst)?;
         for e in fs::read_dir(src)?.flatten() {
             copy_tree(&e.path(), &dst.join(e.file_name()))?;
         }
-    } else {
+    } else if t.is_file() {
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -362,6 +367,28 @@ pub fn install_archive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symlinks_and_fifos_are_not_followed() {
+        let base = std::env::temp_dir().join(format!("linex-links-{}", std::process::id()));
+        let (src, outside, dst) = (base.join("src"), base.join("outside"), base.join("dst"));
+        fs::create_dir_all(src.join("Mod")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret"), "x").unwrap();
+        fs::write(src.join("Mod/manifest.json"), "{}").unwrap();
+        std::os::unix::fs::symlink(&outside, src.join("Mod/dir-link")).unwrap();
+        std::os::unix::fs::symlink(outside.join("secret"), src.join("Mod/file-link")).unwrap();
+        assert!(Command::new("mkfifo").arg(src.join("Mod/pipe")).status().is_ok_and(|s| s.success()));
+
+        let mut files = Vec::new();
+        walk(&src, &mut files);
+        assert_eq!(files, [src.join("Mod/manifest.json")]);
+        copy_tree(&src, &dst).unwrap();
+        let mut copied: Vec<_> = fs::read_dir(dst.join("Mod")).unwrap().flatten().map(|e| e.file_name()).collect();
+        copied.sort();
+        assert_eq!(copied, ["manifest.json"]);
+        fs::remove_dir_all(base).unwrap();
+    }
 
     #[test]
     fn cleans_nexus_name() {
