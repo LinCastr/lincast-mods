@@ -81,6 +81,10 @@ translations from `lang/`). The release profile uses LTO, so it takes ~2.5 min.
 | `src/nexus.rs` | Nexus API v1, `nxm://` links, API key in the keyring (file fallback, 0600). |
 | `src/thunderstore.rs` | Thunderstore API: package refs, dependency resolution, download, install (CLI `ts install`). |
 | `src/launchers.rs` | Heroic (Epic, GOG, Amazon, sideload) and Lutris game detection; CLI `others`. |
+| `src/browse.rs` | Search: Nexus GraphQL (`api.nexusmods.com/v2/graphql`, no key) and Thunderstore lists; "already installed / similar" matching. |
+| `src/deps.rs` | Missing dependencies (SMAPI manifests → smapi.io, Nexus requirements). |
+| `src/r2modman.rs` | Import an r2modman profile into the game folder. |
+| `src/gui/browse_tab.rs` | The Browse tab and the confirmation dialog. |
 | `src/meta.rs` | Mod icons (64px PNG cache) and cached Nexus mod info (6 h TTL). |
 | `src/loaders.rs` | Installing MelonLoader / BepInEx (5 for Mono, 6 BE for IL2CPP) into Unity games. |
 | `src/desktop.rs` | `.desktop` entry, icon, `x-scheme-handler/nxm` registration. |
@@ -104,6 +108,15 @@ translations from `lang/`). The release profile uses LTO, so it takes ~2.5 min.
   mod drops another mod's record.
 - Proton games need `WINEDLLOVERRIDES` (`winhttp=n,b` BepInEx, `version=n,b` MelonLoader).
 - Flickable: use `content-*`, not the deprecated `viewport-*`.
+
+## Testing with clicks (local session, Hyprland)
+
+The GUI runs under XWayland, so `xdotool` can click and type in a hidden test window, and
+`grim -T <stableId>` captures just that window (popups included; `take_snapshot` misses
+them). Open the app with a fake HOME and `LINEX_APP_ID=linex-mods-test`, add a runtime rule
+sending that class to a special workspace (float, fixed size), then
+`xdotool mousemove --window $W X Y click 1`; for typing, `xdotool windowfocus $W` then
+`xdotool type` (the user's focus is not taken). Get `stableId` from `hyprctl clients -j`.
 
 ## Testing without clicking
 
@@ -131,10 +144,11 @@ Not yet tested by the user with the mouse: right-click menu, real drag & drop, d
 the scrollbar, loader install on a real game, copying the launch option.
 
 Next / open:
-- Thunderstore: backend + CLI done (r2modman layout: `BepInEx/{plugins,patchers,core,monomod}/
-  Owner-Name`, configs only when missing, loader packs skipped). Missing: the window side
-  (search, `ror2mm://` "Install with Mod Manager" links: registering that handler would take
-  it from r2modman, ask the user first).
+- Done since: Browse tab (Nexus GraphQL search + Thunderstore community list), source marks,
+  Thunderstore updates/Update all, missing dependencies (SMAPI manifests + smapi.io, Nexus
+  requirements), r2modman profile import, `ror2mm://` handler (the user moved it from
+  r2modman on purpose). Free Nexus accounts can't download through the API: the app opens
+  the files page and the site's button comes back as nxm://.
 - Rewriting the first ~15 Portuguese commit messages needs a force push to the public
   repo: only with the user's explicit OK.
 - Heroic/Lutris: only detection. Installing mods there needs a game model that isn't

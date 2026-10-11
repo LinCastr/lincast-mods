@@ -28,23 +28,36 @@ It is a small native app (Rust + Slint): about 30 MB of RAM, no browser engine i
 
 ## Features
 
+**Finding mods**
+- **Browse** tab in every game: search the **Nexus** or **Thunderstore** without leaving the
+  app, sorted by popular, recently updated or name. Results show what you already have,
+  what has a newer version, and the same mod installed from the other site.
+- Thunderstore installs in one click, with its dependencies listed first. Free Nexus
+  accounts download through the site's button, which sends the file back to the app.
+- The website buttons, Nexus **"Mod Manager Download"** and Thunderstore **"Install with Mod
+  Manager"**, open straight in linex-mods.
+
 **Mods**
 - Install from `.zip`, `.7z` or `.rar` with the **Add mod** button or by **dragging files**
   onto the window.
-- The Nexus **"Mod Manager Download"** button opens straight in linex-mods (free accounts
-  included).
 - Turn mods on and off without deleting them; remove sends everything the mod installed to
   the trash, keeping shared libraries other mods still use.
-- **Thunderstore** packages from the command line, with their dependencies, in r2modman's
-  folder layout (`linex-mods ts install <game> Owner-Name`). A package zip downloaded by hand
-  from thunderstore.io can also be dropped on the window.
+- Thunderstore packages go in r2modman's folder layout; a package zip downloaded by hand
+  can be dropped on the window too.
+- **Import an r2modman profile** into the game folder (BepInEx included), so the game runs
+  modded straight from Steam.
 - Reinstalling a SMAPI mod keeps its `config.json`.
 - Right-click a mod: enable/disable, show in folder, open its page, properties, remove.
 
 **Knowing what you have**
-- Icons, names, versions and authors from SMAPI and Thunderstore manifests and from the Nexus.
-- **Update check** for mods from the Nexus, including SMAPI mods matched through their
-  `UpdateKeys`.
+- Icons, names, versions and authors from SMAPI and Thunderstore manifests and from the Nexus,
+  and a mark for where each mod came from (Nexus, Thunderstore or unknown).
+- **Update check** for Nexus and Thunderstore mods, including SMAPI mods matched through
+  their `UpdateKeys`. Thunderstore mods update in one click, or all at once.
+- **Missing dependencies**: SMAPI mods are checked against their manifests (smapi.io says
+  where to get each one) and Nexus mods against their requirements; the app offers the
+  download pages. Thunderstore dependencies install by themselves.
+- Warns when the same mod is installed twice from different sites.
 - Warns when a mod was built for a different loader (a MelonLoader mod in a BepInEx game).
 - Warns when Proton will ignore the loader DLL and copies the launch option that fixes it.
 
@@ -106,6 +119,9 @@ linex-mods enable|disable|remove <game> <mod>
 linex-mods unity                list Unity games without a loader
 linex-mods loader <game> melonloader|bepinex
 linex-mods updates <game>       check Nexus mods for new versions
+linex-mods search <game> nexus|ts [words]
+linex-mods deps <game>          missing dependencies (SMAPI)
+linex-mods r2modman [import <game> [profile]]
 linex-mods others               list Heroic and Lutris games (detection only for now)
 linex-mods ts install <game> <package>
                                 Thunderstore package + dependencies
@@ -116,7 +132,6 @@ linex-mods ts install <game> <package>
 
 ## Roadmap
 
-- Thunderstore in the window: search and the "Install with Mod Manager" button.
 - Nexus collections.
 - Heroic and Lutris games: detection is done (`linex-mods others`); installing mods in them
   is next.
