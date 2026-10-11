@@ -29,11 +29,12 @@ fn icon_path(l: &Listing, domain: &str) -> PathBuf {
     }
 }
 
-fn source_name(s: Source) -> String {
-    match s {
-        Source::Nexus => "Nexus".into(),
-        Source::Thunderstore => "Thunderstore".into(),
-        Source::Unknown => tr!("unknown origin", "origem desconhecida"),
+/// "Similar to …" line, worded per site (Portuguese needs "pelo Nexus" / "pela Thunderstore").
+fn similar_note(name: &str, from: Source) -> String {
+    match from {
+        Source::Nexus => tr!("Similar to \"{name}\", installed from the Nexus", "Parecido com \"{name}\", instalado pelo Nexus"),
+        Source::Thunderstore => tr!("Similar to \"{name}\", installed from Thunderstore", "Parecido com \"{name}\", instalado pela Thunderstore"),
+        Source::Unknown => tr!("Similar to \"{name}\", already installed", "Parecido com \"{name}\", já instalado"),
     }
 }
 
@@ -63,9 +64,7 @@ fn classify(list: Vec<Listing>, installed: &[mods::Mod], installed_dirs: impl Fn
             let (state, note) = match browse::match_installed(&l, installed) {
                 Match::Installed { newer: true } => (2, String::new()),
                 Match::Installed { .. } => (1, String::new()),
-                Match::Similar { name, from } => {
-                    (3, tr!("Similar to \"{name}\", installed from {}", "Parecido com \"{name}\", instalado pelo {}", source_name(from)))
-                }
+                Match::Similar { name, from } => (3, similar_note(&name, from)),
                 Match::None => (0, deps_note),
             };
             Result { listing: l, state, note }
