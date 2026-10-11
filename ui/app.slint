@@ -197,6 +197,138 @@ component ModRow inherits Rectangle {
     }
 }
 
+component SideLink inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+    height: 36px;
+    border-radius: Theme.radius;
+    background: selected ? Theme.hover : (ta.has-hover ? #ffffff08 : transparent);
+    Text {
+        x: 14px;
+        text: root.text;
+        color: selected ? Theme.text : Theme.dim;
+        font-size: 13px;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component GroupLabel inherits Text {
+    color: Theme.faint;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+component LinkText inherits Text {
+    callback clicked;
+    color: lta.has-hover ? Theme.text : Theme.dim;
+    font-size: 12px;
+    lta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SettingsPage inherits VerticalLayout {
+    in property <string> nexus-status;
+    in property <bool> nexus-ok;
+    in property <bool> key-busy;
+    in property <bool> handler-ok;
+    callback save-key(string);
+    callback clear-key();
+    callback register-handler();
+    callback open-key-page();
+    padding: 32px;
+    spacing: 8px;
+    alignment: start;
+
+    Text {
+        text: "Configurações";
+        color: Theme.text;
+        font-size: 20px;
+        font-weight: 700;
+    }
+    Rectangle { height: 16px; }
+
+    GroupLabel { text: "NEXUS MODS"; }
+    Text {
+        text: "Chave da API";
+        color: Theme.text;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        key := LineEdit {
+            width: 420px;
+            input-type: password;
+            placeholder-text: root.nexus-ok ? "Chave salva. Cole outra para trocar." : "Cole a chave aqui";
+            accepted(t) => {
+                if t != "" && !root.key-busy {
+                    root.save-key(t);
+                    self.text = "";
+                }
+            }
+        }
+        Button {
+            text: root.key-busy ? "Verificando…" : "Salvar";
+            primary: true;
+            clicked => {
+                if key.text != "" && !root.key-busy {
+                    root.save-key(key.text);
+                    key.text = "";
+                }
+            }
+        }
+        if root.nexus-ok: Button {
+            text: "Apagar chave";
+            clicked => { root.clear-key(); }
+        }
+    }
+    Text {
+        text: root.nexus-status;
+        color: root.nexus-ok ? Theme.dim : Theme.faint;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+    if !root.nexus-ok: LinkText {
+        text: "Gerar a chave em nexusmods.com (Configurações → API Keys, no fim da página)";
+        clicked => { root.open-key-page(); }
+    }
+
+    Rectangle { height: 20px; }
+    Rectangle { height: 1px; background: Theme.line; }
+    Rectangle { height: 12px; }
+
+    GroupLabel { text: "LINKS DO SITE"; }
+    Text {
+        text: "Abrir no linex-mods o botão \"Mod Manager Download\" do Nexus";
+        color: Theme.text;
+    }
+    if root.handler-ok: Text {
+        text: "Ativo.";
+        color: Theme.dim;
+        font-size: 12px;
+    }
+    if !root.handler-ok: HorizontalLayout {
+        alignment: start;
+        Button {
+            text: "Ativar";
+            clicked => { root.register-handler(); }
+        }
+    }
+    Text {
+        text: "Na primeira vez, o navegador pergunta qual programa abre o link: escolha o linex-mods.";
+        color: Theme.faint;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+}
+
 export component AppWindow inherits Window {
     title: "linex-mods";
     preferred-width: 1100px;
@@ -219,6 +351,11 @@ export component AppWindow inherits Window {
     in property <bool> message-error;
     in property <bool> busy;
     in-out property <string> filter;
+    in-out property <int> page;
+    in property <string> nexus-status;
+    in property <bool> nexus-ok;
+    in property <bool> key-busy;
+    in property <bool> handler-ok;
 
     callback select-game(int);
     callback toggle-mod(string, bool);
@@ -227,6 +364,13 @@ export component AppWindow inherits Window {
     callback play();
     callback open-folder();
     callback filter-changed(string);
+    callback show-settings();
+    callback save-key(string);
+    callback clear-key();
+    callback register-handler();
+    callback open-key-page();
+    callback nxm-received(string);
+    callback nxm-finished(int, string, bool);
 
     HorizontalLayout {
         // Barra lateral: jogos.
@@ -255,8 +399,9 @@ export component AppWindow inherits Window {
                 Rectangle { height: 6px; }
                 for g[i] in root.games: GameRow {
                     game: g;
-                    selected: i == root.current;
+                    selected: i == root.current && root.page == 0;
                     clicked => {
+                        root.page = 0;
                         root.current = i;
                         root.select-game(i);
                     }
@@ -267,11 +412,46 @@ export component AppWindow inherits Window {
                     wrap: word-wrap;
                 }
                 Rectangle { }
+                SideLink {
+                    text: "Configurações";
+                    selected: root.page == 1;
+                    clicked => {
+                        root.page = 1;
+                        root.show-settings();
+                    }
+                }
+            }
+        }
+
+        if root.page == 1: VerticalLayout {
+            SettingsPage {
+                nexus-status: root.nexus-status;
+                nexus-ok: root.nexus-ok;
+                key-busy: root.key-busy;
+                handler-ok: root.handler-ok;
+                save-key(k) => { root.save-key(k); }
+                clear-key => { root.clear-key(); }
+                register-handler => { root.register-handler(); }
+                open-key-page => { root.open-key-page(); }
+            }
+            Rectangle { }
+            if root.message != "": Rectangle {
+                height: 34px;
+                background: Theme.sidebar;
+                Text {
+                    x: 20px;
+                    text: root.message;
+                    color: root.message-error ? Theme.error : Theme.dim;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    width: parent.width - 40px;
+                }
             }
         }
 
         // Conteúdo.
-        VerticalLayout {
+        if root.page == 0: VerticalLayout {
             // Cabeçalho com a arte do jogo desfocada.
             Rectangle {
                 height: 168px;

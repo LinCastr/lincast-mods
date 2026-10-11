@@ -17,10 +17,14 @@ done for you.
   the right folder for the loader. Reinstalling a mod keeps its `config.json`.
 - Turns mods on and off without deleting them (moved to `.linex-disabled/` inside the game).
 - Its own window (dark, minimal), with the game art from Steam's cache.
+- Remembers which files each mod installed, so removing a mod sends all of it to the trash
+  (shared libraries stay while another mod still uses them).
+- Nexus "Mod Manager Download" button (`nxm://` links), free accounts included. The API key
+  is kept in the system keyring (Secret Service). A click while the window is open goes to
+  the open window.
 
 ## Planned
 
-- Nexus "Mod Manager Download" button (`nxm://` links).
 - Warning and fix for the Proton DLL override that MelonLoader/BepInEx need.
 - Thunderstore support.
 
@@ -34,6 +38,7 @@ linex-mods mods <game>
 linex-mods instalar <game> <archive>...
 linex-mods ligar <game> <mod>
 linex-mods desligar <game> <mod>
+linex-mods remover <game> <mod>
 ```
 
 `<game>` is the Steam AppID or part of the name.

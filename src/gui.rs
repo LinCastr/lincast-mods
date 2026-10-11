@@ -1,7 +1,7 @@
 //! Janela principal.
 
 use crate::games::{self, Game};
-use crate::{install, mods, steam};
+use crate::{desktop, install, ipc, log, mods, nexus, steam};
 use slint::{ComponentHandle, Image, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -119,7 +119,101 @@ fn open(target: &str) {
     }
 }
 
-pub fn run() -> anyhow::Result<()> {
+fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
+    ui.set_message(msg.into());
+    ui.set_message_error(err);
+}
+
+/// Link nxm:// recebido (do navegador ou de outra instância): baixa e instala
+/// fora da thread da janela, mostrando o progresso na linha de mensagem.
+fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
+    let link = match nexus::NxmLink::parse(url) {
+        Ok(l) => l,
+        Err(e) => {
+            log::line(&format!("link recusado: {e:#}"));
+            return set_msg(ui, format!("Link do Nexus: {e:#}"), true);
+        }
+    };
+    log::line(&format!("recebido {}", link.redacted()));
+    let Some(i) = state.games.iter().position(|g| g.nexus.is_some_and(|n| n == link.domain)) else {
+        return set_msg(
+            ui,
+            format!("O link é de \"{}\", que não está entre os jogos detectados com loader de mods.", link.domain),
+            true,
+        );
+    };
+    ui.set_page(0);
+    ui.set_current(i as i32);
+    select(ui, state, i);
+    let game = state.games[i].clone();
+    set_msg(ui, "Baixando do Nexus…", false);
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let appid = game.steam.appid as i32;
+        let finish = |w: &slint::Weak<AppWindow>, msg: String, err: bool| {
+            log::line(&msg);
+            let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_nxm_finished(appid, msg.into(), err));
+        };
+        let Some(key) = nexus::load_key() else {
+            return finish(&weak, "Falta a chave da API do Nexus: veja em Configurações.".into(), true);
+        };
+        let mut last = u64::MAX;
+        let w2 = weak.clone();
+        let dl = nexus::download(&link, &key, |done, total| {
+            let step = if total > 0 { done * 100 / total } else { done / (1024 * 1024) };
+            if step != last {
+                last = step;
+                let txt = if total > 0 {
+                    format!("Baixando do Nexus… {step}%")
+                } else {
+                    format!("Baixando do Nexus… {step} MB")
+                };
+                let _ = w2.upgrade_in_event_loop(move |ui| set_msg(&ui, txt, false));
+            }
+        });
+        let dl = match dl {
+            Ok(d) => d,
+            Err(e) => return finish(&weak, format!("Download falhou: {e:#}"), true),
+        };
+        let _ = weak.upgrade_in_event_loop(|ui| set_msg(&ui, "Instalando…", false));
+        match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
+            Ok(rec) => {
+                let _ = std::fs::remove_file(&dl.path);
+                finish(&weak, format!("Instalado: {}", rec.name), false)
+            }
+            Err(e) => finish(
+                &weak,
+                format!("{}: {e:#} (o arquivo ficou em {})", dl.mod_name, dl.path.display()),
+                true,
+            ),
+        }
+    });
+}
+
+/// Estado da chave do Nexus, lido fora da thread da janela (o chaveiro pode demorar).
+fn refresh_nexus_status(ui: &AppWindow) {
+    ui.set_handler_ok(desktop::is_nxm_handler());
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let (txt, ok) = match nexus::load_key() {
+            None => ("Nenhuma chave salva. Sem ela o botão do site não consegue baixar.".to_string(), false),
+            Some(k) => match nexus::validate(&k) {
+                Ok((name, premium)) => (connected(&name, premium), true),
+                Err(e) => (format!("Há uma chave salva, mas não funcionou: {e:#}"), false),
+            },
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_nexus_status(txt.into());
+            ui.set_nexus_ok(ok);
+        });
+    });
+}
+
+fn connected(name: &str, premium: bool) -> String {
+    format!("Conectado como {name} · conta {}", if premium { "premium" } else { "gratuita" })
+}
+
+pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     // Só funciona depois da plataforma existir (o AppWindow::new a cria).
     let _ = slint::set_xdg_app_id("linex-mods");
@@ -251,10 +345,101 @@ pub fn run() -> anyhow::Result<()> {
         });
     }
 
+    {
+        let state = state.clone();
+        let weak = ui.as_weak();
+        ui.on_nxm_received(move |url| {
+            if let Some(ui) = weak.upgrade() {
+                handle_nxm(&ui, &mut state.borrow_mut(), &url);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_nxm_finished(move |appid, msg, err| {
+            let Some(ui) = weak.upgrade() else { return };
+            set_msg(&ui, msg, err);
+            let st = state.borrow();
+            if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
+                refresh_mods(&ui, &st);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_show_settings(move || {
+            if let Some(ui) = weak.upgrade() {
+                set_msg(&ui, "", false);
+                refresh_nexus_status(&ui);
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_save_key(move |key| {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.set_key_busy(true);
+            let weak = weak.clone();
+            let key = key.to_string();
+            std::thread::spawn(move || {
+                // Só guarda chave que o Nexus aceita.
+                let (txt, ok) = match nexus::validate(&key) {
+                    Ok((name, premium)) => match nexus::save_key(&key) {
+                        Ok(place) => (format!("{}. Chave guardada {place}.", connected(&name, premium)), true),
+                        Err(e) => (format!("A chave funciona, mas não deu para guardar: {e:#}"), false),
+                    },
+                    Err(e) => (format!("Chave não aceita: {e:#}"), false),
+                };
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    ui.set_key_busy(false);
+                    ui.set_nexus_status(txt.into());
+                    ui.set_nexus_ok(ok);
+                });
+            });
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_clear_key(move || {
+            nexus::clear_key();
+            if let Some(ui) = weak.upgrade() {
+                ui.set_nexus_ok(false);
+                ui.set_nexus_status("Chave apagada.".into());
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_register_handler(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            match desktop::register_nxm_handler() {
+                Ok(()) => set_msg(&ui, "Pronto: o botão \"Mod Manager Download\" agora abre aqui.", false),
+                Err(e) => set_msg(&ui, format!("Não deu para registrar: {e:#}"), true),
+            }
+            ui.set_handler_ok(desktop::is_nxm_handler());
+        });
+    }
+    ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
+
+    // Links que chegarem por outra instância (clique no site com a janela aberta).
+    {
+        let weak = ui.as_weak();
+        ipc::listen(move |msg| {
+            if msg.starts_with("nxm://") {
+                let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_nxm_received(msg.into()));
+            }
+        });
+    }
+
     if !state.borrow().games.is_empty() {
         ui.set_current(0);
         select(&ui, &mut state.borrow_mut(), 0);
     }
-    ui.run()?;
+    if let Some(url) = initial_nxm {
+        ui.invoke_nxm_received(url.into());
+    }
+    let r = ui.run();
+    ipc::cleanup();
+    r?;
     Ok(())
 }

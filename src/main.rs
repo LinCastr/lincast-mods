@@ -1,7 +1,11 @@
+mod desktop;
 mod games;
 mod gui;
 mod install;
+mod ipc;
+mod log;
 mod mods;
+mod nexus;
 mod records;
 mod steam;
 mod vdf;
@@ -64,7 +68,16 @@ fn run(args: &[String]) -> Result<()> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let result = if args.is_empty() { gui::run() } else { run(&args) };
+    let result = match args.as_slice() {
+        [] => gui::run(None),
+        // Clique em "Mod Manager Download": repassa para a janela aberta, ou abre uma.
+        [url] if url.starts_with("nxm://") => {
+            let shown = nexus::NxmLink::parse(url).map(|l| l.redacted()).unwrap_or_else(|_| "nxm:// inválido".into());
+            log::line(&format!("aberto pelo navegador com {shown}"));
+            if ipc::send(url) { Ok(()) } else { gui::run(Some(url.clone())) }
+        }
+        _ => run(&args),
+    };
     if let Err(e) = result {
         eprintln!("erro: {e:#}");
         std::process::exit(1);
