@@ -4,7 +4,7 @@ use crate::games::{Game, Loader};
 use crate::records;
 use anyhow::{Context, Result, bail};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Mod {
@@ -14,7 +14,8 @@ pub struct Mod {
     pub version: Option<String>,
     pub author: Option<String>,
     pub enabled: bool,
-    pub path: PathBuf,
+    /// Instalado pelo botão do Nexus (tem a origem no registro).
+    pub from_nexus: bool,
 }
 
 /// Arquivos que acompanham mods mas não são mods.
@@ -127,7 +128,7 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
         version: None,
         author: None,
         enabled,
-        path: path.to_path_buf(),
+        from_nexus: false,
     };
     match loader {
         Loader::MelonLoader => {
@@ -174,15 +175,17 @@ pub fn list(game: &Game) -> Vec<Mod> {
     scan(game.loader, &game.mods_dir(), true, &mut mods);
     scan(game.loader, &game.disabled_dir(), false, &mut mods);
     // DLLs têm nome de arquivo ("ContinuousSprint"); o registro guarda o nome do mod.
-    if game.loader != Loader::Smapi {
-        let recs = records::load(game.steam.appid);
-        for m in &mut mods {
-            if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
-                let r = &recs.mods[i];
+    // Mods do SMAPI já têm nome no manifest.json.
+    let recs = records::load(game.steam.appid);
+    for m in &mut mods {
+        if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
+            let r = &recs.mods[i];
+            m.from_nexus = r.nexus.is_some();
+            if game.loader != Loader::Smapi {
                 m.name = r.name.clone();
-                if m.version.is_none() {
-                    m.version = r.nexus.as_ref().and_then(|n| n.version.clone());
-                }
+            }
+            if m.version.is_none() {
+                m.version = r.nexus.as_ref().and_then(|n| n.version.clone());
             }
         }
     }

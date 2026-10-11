@@ -1,7 +1,7 @@
 //! Janela principal.
 
 use crate::games::{self, Game};
-use crate::{desktop, install, ipc, log, mods, nexus, steam};
+use crate::{config, desktop, install, ipc, log, mods, nexus, steam, theme};
 use slint::{ComponentHandle, Image, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -60,43 +60,39 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
         return;
     };
     let all = mods::list(g);
+    let total = all.len();
     let on = all.iter().filter(|m| m.enabled).count();
+    ui.set_show_author(all.iter().any(|m| m.author.is_some()));
     let q = ui.get_filter().to_lowercase();
+    let mode = ui.get_filter_mode();
     let items: Vec<ModItem> = all
         .into_iter()
         .filter(|m| q.is_empty() || m.name.to_lowercase().contains(&q) || m.id.to_lowercase().contains(&q))
-        .map(|m| {
-            let mut detail = Vec::new();
-            if let Some(a) = m.author {
-                detail.push(a);
-            }
-            if let Some(v) = m.version {
-                detail.push(format!("v{v}"));
-            }
-            ModItem {
-                id: m.id.into(),
-                name: m.name.into(),
-                detail: detail.join(" · ").into(),
-                enabled: m.enabled,
-            }
+        .filter(|m| match mode {
+            1 => m.enabled,
+            2 => !m.enabled,
+            _ => true,
+        })
+        .map(|m| ModItem {
+            id: m.id.into(),
+            name: m.name.into(),
+            author: m.author.unwrap_or_default().into(),
+            version: m.version.unwrap_or_default().into(),
+            source: if m.from_nexus { "Nexus".into() } else { SharedString::new() },
+            enabled: m.enabled,
         })
         .collect();
-    let total = ui_total(&items, on, q.is_empty());
-    ui.set_counts(total.into());
-    ui.set_mods(ModelRc::new(VecModel::from(items)));
-}
-
-fn ui_total(items: &[ModItem], on: usize, unfiltered: bool) -> String {
-    if unfiltered {
-        let n = items.len();
-        match n {
+    let counts = if !q.is_empty() || mode != 0 {
+        format!("{} de {total}", items.len())
+    } else {
+        match total {
             0 => String::new(),
             1 => format!("1 mod · {on} ligado"),
-            _ => format!("{n} mods · {on} ligados"),
+            _ => format!("{total} mods · {on} ligados"),
         }
-    } else {
-        format!("{} encontrados", items.len())
-    }
+    };
+    ui.set_counts(counts.into());
+    ui.set_mods(ModelRc::new(VecModel::from(items)));
 }
 
 fn select(ui: &AppWindow, state: &mut State, i: usize) {
@@ -106,11 +102,70 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     let (status, warn) = status_of(g);
     ui.set_game_status(status.into());
     ui.set_game_warning(warn);
-    ui.set_hero(load_image(steam::art(g.steam.appid, "library_hero_blur.jpg")));
+    let appid = g.steam.appid;
+    ui.set_hero(load_image(steam::art(appid, "library_hero.jpg").or_else(|| steam::art(appid, "library_hero_blur.jpg"))));
     ui.set_logo(load_image(steam::art(g.steam.appid, "logo.png")));
     ui.set_filter(SharedString::new());
+    ui.set_filter_mode(0);
     ui.set_message(SharedString::new());
     refresh_mods(ui, state);
+    let mut cfg = config::load();
+    if cfg.last_game != Some(appid) {
+        cfg.last_game = Some(appid);
+        config::save(&cfg);
+    }
+}
+
+fn color(c: theme::Rgb) -> slint::Color {
+    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    slint::Color::from_rgb_u8(b(c.0), b(c.1), b(c.2))
+}
+
+/// Aplica o tema escolhido. Sem paleta do wallust, cai no padrão.
+fn apply_theme(ui: &AppWindow) {
+    let palette = theme::find_palette();
+    ui.set_wallust_available(palette.is_some());
+    ui.set_wallust_path(
+        palette
+            .as_ref()
+            .map(|p| p.to_string_lossy().replace(&steam::home().to_string_lossy().to_string(), "~"))
+            .unwrap_or_default()
+            .into(),
+    );
+    let use_wallust = config::load().theme == "wallust" && palette.is_some();
+    ui.set_theme_mode(if use_wallust { 1 } else { 0 });
+    let c = palette
+        .filter(|_| use_wallust)
+        .and_then(|p| theme::load_palette(&p))
+        .map(|p| theme::wallust_colors(&p))
+        .unwrap_or_else(theme::default_colors);
+    let t = ui.global::<Theme>();
+    t.set_bg(color(c.bg));
+    t.set_sidebar(color(c.sidebar));
+    t.set_surface(color(c.surface));
+    t.set_raised(color(c.raised));
+    t.set_hover(color(c.hover));
+    t.set_line(color(c.line));
+    t.set_text(color(c.text));
+    t.set_dim(color(c.dim));
+    t.set_faint(color(c.faint));
+    t.set_accent(color(c.accent));
+    t.set_on_accent(color(c.on_accent));
+}
+
+fn game_items(games: &[Game]) -> Vec<GameItem> {
+    games
+        .iter()
+        .map(|g| GameItem {
+            appid: g.steam.appid as i32,
+            name: g.steam.name.clone().into(),
+            loader: match g.installed_loader {
+                Some(l) => l.label().into(),
+                None => format!("{} não instalado", g.loader.label()).into(),
+            },
+            icon: load_image(steam::icon(g.steam.appid)),
+        })
+        .collect()
 }
 
 fn open(target: &str) {
@@ -240,27 +295,54 @@ fn connected(name: &str, premium: bool) -> String {
     format!("Conectado como {name} · conta {}", if premium { "premium" } else { "gratuita" })
 }
 
+/// Modo de teste (desenvolvimento): LINEX_SNAPSHOT=arquivo.png salva um print da
+/// janela e fecha. LINEX_GAME escolhe o jogo (parte do nome), LINEX_PAGE=1 abre as
+/// Configurações, LINEX_MESSAGE mostra um aviso.
+fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
+    let Ok(out) = std::env::var("LINEX_SNAPSHOT") else { return };
+    if let Ok(q) = std::env::var("LINEX_GAME") {
+        let q = q.to_lowercase();
+        let pos = state.borrow().games.iter().position(|g| g.steam.name.to_lowercase().contains(&q));
+        if let Some(i) = pos {
+            ui.set_current(i as i32);
+            select(ui, &mut state.borrow_mut(), i);
+        }
+    }
+    if std::env::var("LINEX_PAGE").as_deref() == Ok("1") {
+        ui.set_page(1);
+        ui.invoke_show_settings();
+    }
+    if let Ok(m) = std::env::var("LINEX_MESSAGE") {
+        set_progress(ui, m);
+    }
+    let weak = ui.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(1800), move || {
+        let Some(ui) = weak.upgrade() else { return };
+        match ui.window().take_snapshot() {
+            Ok(buf) => {
+                let f = std::fs::File::create(&out).expect("arquivo do print");
+                let mut enc = png::Encoder::new(std::io::BufWriter::new(f), buf.width(), buf.height());
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                let mut w = enc.write_header().expect("png");
+                w.write_image_data(buf.as_bytes()).expect("png");
+            }
+            Err(e) => eprintln!("print falhou: {e}"),
+        }
+        let _ = slint::quit_event_loop();
+    });
+}
+
 pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     desktop::refresh_desktop_file();
     let ui = AppWindow::new()?;
     // Só funciona depois da plataforma existir (o AppWindow::new a cria).
-    let _ = slint::set_xdg_app_id("linex-mods");
+    let app_id = std::env::var("LINEX_APP_ID").unwrap_or_else(|_| "linex-mods".into());
+    let _ = slint::set_xdg_app_id(app_id);
     let state = Rc::new(RefCell::new(State { games: games::moddable_games(), current: None }));
 
-    let items: Vec<GameItem> = state
-        .borrow()
-        .games
-        .iter()
-        .map(|g| GameItem {
-            appid: g.steam.appid as i32,
-            name: g.steam.name.clone().into(),
-            loader: match g.installed_loader {
-                Some(l) => l.label().into(),
-                None => format!("{} não instalado", g.loader.label()).into(),
-            },
-        })
-        .collect();
-    ui.set_games(ModelRc::new(VecModel::from(items)));
+    apply_theme(&ui);
+    ui.set_games(ModelRc::new(VecModel::from(game_items(&state.borrow().games))));
 
     {
         let (weak, state) = (ui.as_weak(), state.clone());
@@ -449,13 +531,47 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
 
-    if !state.borrow().games.is_empty() {
-        ui.set_current(0);
-        select(&ui, &mut state.borrow_mut(), 0);
+    {
+        let weak = ui.as_weak();
+        ui.on_theme_changed(move |i| {
+            let mut cfg = config::load();
+            cfg.theme = if i == 1 { "wallust".into() } else { "default".into() };
+            config::save(&cfg);
+            if let Some(ui) = weak.upgrade() {
+                apply_theme(&ui);
+            }
+        });
+    }
+    // A paleta muda quando o papel de parede muda: confere a cada 3 s.
+    let theme_timer = slint::Timer::default();
+    {
+        let weak = ui.as_weak();
+        let last = RefCell::new(theme::find_palette().and_then(|p| theme::mtime(&p)));
+        theme_timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(3), move || {
+            let now = theme::find_palette().and_then(|p| theme::mtime(&p));
+            if *last.borrow() != now {
+                *last.borrow_mut() = now;
+                if let Some(ui) = weak.upgrade() {
+                    apply_theme(&ui);
+                }
+            }
+        });
+    }
+
+    // Abre no último jogo usado.
+    let start = {
+        let st = state.borrow();
+        let last = config::load().last_game;
+        st.games.iter().position(|g| Some(g.steam.appid) == last).or((!st.games.is_empty()).then_some(0))
+    };
+    if let Some(i) = start {
+        ui.set_current(i as i32);
+        select(&ui, &mut state.borrow_mut(), i);
     }
     if let Some(url) = initial_nxm {
         ui.invoke_nxm_received(url.into());
     }
+    snapshot_mode(&ui, &state);
     let r = ui.run();
     ipc::cleanup();
     r?;

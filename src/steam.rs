@@ -129,6 +129,30 @@ pub fn art(appid: u32, file: &str) -> Option<PathBuf> {
     None
 }
 
+/// Ícone pequeno do jogo (32×32). No cache novo do Steam é o .jpg com nome de hash
+/// (40 caracteres hexadecimais) dentro da pasta do jogo; no antigo, `<appid>_icon.jpg`.
+pub fn icon(appid: u32) -> Option<PathBuf> {
+    for root in steam_roots() {
+        let cache = root.join("appcache/librarycache");
+        let dir = cache.join(appid.to_string());
+        if let Ok(rd) = fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_string();
+                if let Some(stem) = n.strip_suffix(".jpg") {
+                    if stem.len() == 40 && stem.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return Some(e.path());
+                    }
+                }
+            }
+        }
+        let old = cache.join(format!("{appid}_icon.jpg"));
+        if old.is_file() {
+            return Some(old);
+        }
+    }
+    None
+}
+
 /// Opções de inicialização do jogo (de qualquer usuário logado neste Steam).
 pub fn launch_options(appid: u32) -> Vec<String> {
     let mut out = Vec::new();

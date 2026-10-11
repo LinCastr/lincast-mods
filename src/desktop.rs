@@ -48,10 +48,11 @@ fn desktop_exec_ok() -> bool {
         .is_some_and(|p| std::path::Path::new(p).is_file())
 }
 
-/// Ao abrir: se o atalho já existe, regrava com o caminho atual do programa
-/// (o binário pode ter mudado de lugar ou sido recompilado).
+/// Ao abrir: se o atalho existe mas aponta para um programa que sumiu (mudou de
+/// lugar), regrava com o caminho atual. Só nesse caso: regravar sempre fazia
+/// qualquer cópia aberta (ex.: a de desenvolvimento) tomar os links para si.
 pub fn refresh_desktop_file() {
-    if apps_dir().join(DESKTOP_ID).is_file() {
+    if apps_dir().join(DESKTOP_ID).is_file() && !desktop_exec_ok() {
         if let Ok(exe) = exe_path() {
             let _ = write_desktop(&exe);
         }

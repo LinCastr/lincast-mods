@@ -14,6 +14,7 @@ slint = { version = "1", default-features = false, features = ["std", "compat-1-
 rfd = "0.15"
 trash = "5"
 notify-rust = "4"
+png = "0.17"
 ureq = { version = "2", features = ["json"] }
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 

@@ -1,3 +1,4 @@
+mod config;
 mod desktop;
 mod games;
 mod gui;
@@ -8,6 +9,7 @@ mod mods;
 mod nexus;
 mod records;
 mod steam;
+mod theme;
 mod vdf;
 
 use anyhow::{Context, Result, bail};
