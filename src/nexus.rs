@@ -26,14 +26,14 @@ impl NxmLink {
     pub fn parse(url: &str) -> Result<Self> {
         let rest = url
             .strip_prefix("nxm://")
-            .ok_or_else(|| anyhow!("não é um link nxm://"))?;
+            .ok_or_else(|| anyhow!("{}", tr!("not an nxm:// link", "não é um link nxm://")))?;
         let (path, query) = rest.split_once('?').unwrap_or((rest, ""));
         let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
         let [domain, "mods", mod_id, "files", file_id] = parts.as_slice() else {
             if parts.get(1) == Some(&"collections") {
-                bail!("coleções do Nexus ainda não são suportadas");
+                bail!("{}", tr!("Nexus collections are not supported yet", "coleções do Nexus ainda não são suportadas"));
             }
-            bail!("link nxm:// em formato desconhecido");
+            bail!("{}", tr!("unknown nxm:// link format", "link nxm:// em formato desconhecido"));
         };
         let mut key = None;
         let mut expires = None;
@@ -46,8 +46,8 @@ impl NxmLink {
         }
         Ok(NxmLink {
             domain: domain.to_lowercase(),
-            mod_id: mod_id.parse().context("ID do mod inválido")?,
-            file_id: file_id.parse().context("ID do arquivo inválido")?,
+            mod_id: mod_id.parse().context(tr!("invalid mod ID", "ID do mod inválido"))?,
+            file_id: file_id.parse().context(tr!("invalid file ID", "ID do arquivo inválido"))?,
             key,
             expires,
         })
@@ -88,7 +88,7 @@ pub fn save_key(key: &str) -> Result<String> {
     if let Some(e) = entry() {
         if e.set_password(key).is_ok() && e.get_password().ok().as_deref() == Some(key) {
             let _ = fs::remove_file(key_file());
-            return Ok("no chaveiro do sistema".into());
+            return Ok(tr!("in the system keyring", "no chaveiro do sistema"));
         }
     }
     use std::os::unix::fs::OpenOptionsExt;
@@ -101,7 +101,7 @@ pub fn save_key(key: &str) -> Result<String> {
         .mode(0o600)
         .open(&p)?;
     f.write_all(key.as_bytes())?;
-    Ok(format!("em {} (chaveiro do sistema indisponível)", p.display()))
+    Ok(tr!("in {} (system keyring unavailable)", "em {} (chaveiro do sistema indisponível)", p.display()))
 }
 
 pub fn clear_key() {
@@ -130,13 +130,13 @@ fn get_json(path_and_query: &str, key: &str) -> Result<serde_json::Value> {
         .call()
     {
         Ok(r) => Ok(r.into_json()?),
-        Err(ureq::Error::Status(401, _)) => bail!("chave da API recusada pelo Nexus"),
+        Err(ureq::Error::Status(401, _)) => bail!("{}", tr!("the Nexus rejected the API key", "chave da API recusada pelo Nexus")),
         Err(ureq::Error::Status(403, _)) => {
-            bail!("o Nexus negou o download (o link do site vale poucos minutos; clique de novo)")
+            bail!("{}", tr!("the Nexus refused the download (the website link only lasts a few minutes; click it again)", "o Nexus negou o download (o link do site vale poucos minutos; clique de novo)"))
         }
-        Err(ureq::Error::Status(404, _)) => bail!("mod ou arquivo não encontrado no Nexus"),
-        Err(ureq::Error::Status(429, _)) => bail!("limite de pedidos do Nexus atingido; tente mais tarde"),
-        Err(e) => Err(anyhow!(e).context("falha ao falar com o Nexus")),
+        Err(ureq::Error::Status(404, _)) => bail!("{}", tr!("mod or file not found on the Nexus", "mod ou arquivo não encontrado no Nexus")),
+        Err(ureq::Error::Status(429, _)) => bail!("{}", tr!("Nexus request limit reached; try again later", "limite de pedidos do Nexus atingido; tente mais tarde")),
+        Err(e) => Err(anyhow!(e).context(tr!("couldn't reach the Nexus", "falha ao falar com o Nexus"))),
     }
 }
 
@@ -208,7 +208,7 @@ pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -
         .as_array()
         .and_then(|a| a.first())
         .and_then(|l| l["URI"].as_str())
-        .ok_or_else(|| anyhow!("o Nexus não devolveu link de download"))?
+        .ok_or_else(|| anyhow!("{}", tr!("the Nexus returned no download link", "o Nexus não devolveu link de download")))?
         .to_string();
 
     // Só o nome do arquivo, nunca um caminho vindo de fora.
@@ -222,7 +222,7 @@ pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -
     let path = dir.join(&file_name);
     let part = dir.join(format!("{file_name}.part"));
 
-    let resp = agent().get(&uri).call().context("falha ao baixar o arquivo")?;
+    let resp = agent().get(&uri).call().context(tr!("couldn't download the file", "falha ao baixar o arquivo"))?;
     let total: u64 = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
     let mut reader = resp.into_reader();
     let mut out = fs::File::create(&part)?;

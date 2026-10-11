@@ -64,7 +64,7 @@ fn github_asset(repo: &str, tag: Option<&str>, pick: impl Fn(&str) -> bool) -> R
         Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
         None => format!("https://api.github.com/repos/{repo}/releases/latest"),
     };
-    let v: serde_json::Value = agent().get(&url).call().context("falha ao consultar o GitHub")?.into_json()?;
+    let v: serde_json::Value = agent().get(&url).call().context(tr!("couldn't reach GitHub", "falha ao consultar o GitHub"))?.into_json()?;
     v["assets"]
         .as_array()
         .into_iter()
@@ -74,7 +74,7 @@ fn github_asset(repo: &str, tag: Option<&str>, pick: impl Fn(&str) -> bool) -> R
             let url = a["browser_download_url"].as_str()?;
             pick(name).then(|| (name.to_string(), url.to_string()))
         })
-        .ok_or_else(|| anyhow!("não achei o arquivo certo na versão mais nova de {repo}"))
+        .ok_or_else(|| anyhow!("{}", tr!("couldn't find the right file in the latest release of {repo}", "não achei o arquivo certo na versão mais nova de {repo}")))
 }
 
 /// Build "bleeding edge" mais nova do BepInEx 6 (a página lista da mais nova para a
@@ -84,7 +84,7 @@ fn bepinex_be(il2cpp: bool) -> Result<(String, String)> {
     let html = agent()
         .get("https://builds.bepinex.dev/projects/bepinex_be")
         .call()
-        .context("falha ao consultar builds.bepinex.dev")?
+        .context(tr!("couldn't reach builds.bepinex.dev", "falha ao consultar builds.bepinex.dev"))?
         .into_string()?;
     let needle = format!("BepInEx-Unity.{kind}-win-x64-");
     let href = html
@@ -92,7 +92,7 @@ fn bepinex_be(il2cpp: bool) -> Result<(String, String)> {
         .skip(1)
         .filter_map(|s| s.split('"').next())
         .find(|h| h.contains(&needle) && h.ends_with(".zip"))
-        .ok_or_else(|| anyhow!("não achei a build do BepInEx 6 {kind}"))?;
+        .ok_or_else(|| anyhow!("{}", tr!("couldn't find the BepInEx 6 {kind} build", "não achei a build do BepInEx 6 {kind}")))?;
     let name = href.rsplit('/').next().unwrap_or("bepinex.zip").replace("%2B", "+");
     Ok((name, format!("https://builds.bepinex.dev{href}")))
 }
@@ -108,7 +108,7 @@ fn pick_download(loader: Loader, il2cpp: bool) -> Result<(String, String)> {
                 n == "BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2.zip"
             })
         }),
-        Loader::Smapi => bail!("o SMAPI tem instalador próprio (smapi.io)"),
+        Loader::Smapi => bail!("{}", tr!("SMAPI has its own installer (smapi.io)", "o SMAPI tem instalador próprio (smapi.io)")),
     }
 }
 
@@ -128,7 +128,7 @@ pub fn install(dir: &Path, loader: Loader, il2cpp: bool, mut progress: impl FnMu
     fs::create_dir_all(&dest_dir)?;
     let file = dest_dir.join(&name);
     if !file.is_file() {
-        let resp = agent().get(&url).call().with_context(|| format!("falha ao baixar {name}"))?;
+        let resp = agent().get(&url).call().with_context(|| tr!("couldn't download {name}", "falha ao baixar {name}"))?;
         let total: u64 = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
         let part = dest_dir.join(format!("{name}.part"));
         let mut out = fs::File::create(&part)?;
@@ -147,7 +147,7 @@ pub fn install(dir: &Path, loader: Loader, il2cpp: bool, mut progress: impl FnMu
         out.flush()?;
         fs::rename(&part, &file)?;
     }
-    crate::install::extract(&file, dir).with_context(|| format!("extraindo {name} em {}", dir.display()))?;
+    crate::install::extract(&file, dir).with_context(|| tr!("extracting {name} into {}", "extraindo {name} em {}", dir.display()))?;
     // O BepInEx só cria plugins/ ao abrir o jogo; criar já deixa o app listar e instalar.
     if loader == Loader::BepInEx {
         fs::create_dir_all(dir.join("BepInEx/plugins"))?;

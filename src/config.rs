@@ -12,6 +12,9 @@ pub struct Config {
     /// AppID do último jogo aberto.
     #[serde(default)]
     pub last_game: Option<u32>,
+    /// Interface language: "auto" (empty), "en" or "pt".
+    #[serde(default)]
+    pub lang: String,
 }
 
 fn path() -> PathBuf {

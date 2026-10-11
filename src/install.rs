@@ -20,7 +20,7 @@ impl TempDir {
                 return Ok(TempDir(p));
             }
         }
-        bail!("não consegui criar pasta temporária em {}", base.display())
+        bail!("{}", tr!("couldn't create a temporary folder in {}", "não consegui criar pasta temporária em {}", base.display()))
     }
 }
 
@@ -31,8 +31,8 @@ impl Drop for TempDir {
 }
 
 fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
-    let file = fs::File::open(archive).with_context(|| format!("abrindo {}", archive.display()))?;
-    let mut zip = zip::ZipArchive::new(file).context("o arquivo não é um .zip válido")?;
+    let file = fs::File::open(archive).with_context(|| tr!("opening {}", "abrindo {}", archive.display()))?;
+    let mut zip = zip::ZipArchive::new(file).context(tr!("the file is not a valid .zip", "o arquivo não é um .zip válido"))?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         // enclosed_name recusa caminhos que saem da pasta (../, absolutos).
@@ -77,10 +77,10 @@ fn extract_external(archive: &Path, dest: &Path) -> Result<()> {
             .status()?
             .success()
     } else {
-        bail!("para abrir .7z/.rar instale o pacote 7zip (ou libarchive)");
+        bail!("{}", tr!("to open .7z/.rar files, install the 7zip (or libarchive) package", "para abrir .7z/.rar instale o pacote 7zip (ou libarchive)"));
     };
     if !ok {
-        bail!("falha ao extrair {}", archive.display());
+        bail!("{}", tr!("couldn't extract {}", "falha ao extrair {}", archive.display()));
     }
     Ok(())
 }
@@ -119,7 +119,7 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::copy(src, dst).with_context(|| format!("copiando para {}", dst.display()))?;
+        fs::copy(src, dst).with_context(|| tr!("copying to {}", "copiando para {}", dst.display()))?;
     }
     Ok(())
 }
@@ -140,7 +140,7 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
         .filter_map(|f| f.parent().map(Path::to_path_buf))
         .collect();
     if mdirs.is_empty() {
-        bail!("não achei manifest.json: isto não parece um mod do SMAPI");
+        bail!("{}", tr!("no manifest.json found: this doesn't look like a SMAPI mod", "não achei manifest.json: isto não parece um mod do SMAPI"));
     }
     // Só as pastas de topo (mod dentro de mod é parte do de fora).
     mdirs.sort();
@@ -197,7 +197,7 @@ fn replace_dir(src: &Path, enabled_dst: &Path, disabled_dst: &Path) -> Result<()
                 saved.push((rel, fs::read(&f)?));
             }
         }
-        fs::remove_dir_all(dst).with_context(|| format!("removendo versão antiga em {}", dst.display()))?;
+        fs::remove_dir_all(dst).with_context(|| tr!("removing the old version in {}", "removendo versão antiga em {}", dst.display()))?;
     }
     copy_tree(src, dst)?;
     for (rel, data) in saved {
@@ -266,7 +266,7 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
         }
     }
     if placed.is_empty() {
-        bail!("não achei nada para instalar (nenhuma DLL nem pasta do {})", game.loader.label());
+        bail!("{}", tr!("nothing to install found (no DLL or {} folder)", "não achei nada para instalar (nenhuma DLL nem pasta do {})", game.loader.label()));
     }
     let rel = |p: &Path| p.strip_prefix(dir).unwrap_or(p).to_string_lossy().to_string();
     let mut names = Vec::new();
@@ -333,7 +333,8 @@ pub fn install_archive(
     extract(archive, &tmp.0)?;
     let stem = clean_stem(archive);
     let warning = dll_loader(&tmp.0).filter(|l| *l != game.loader).map(|l| {
-        format!(
+        tr!(
+            "this mod was made for {}, but the game uses {}: it won't load. Look for the {} version on the mod page.",
             "este mod foi feito para {}, mas o jogo usa {}: ele não vai carregar. Procure a versão para {} na página do mod.",
             l.label(),
             game.loader.label(),

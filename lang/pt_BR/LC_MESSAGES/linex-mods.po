@@ -1,0 +1,154 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: pt_BR\n"
+
+msgid "Confirm removal"
+msgstr "Confirmar remoção"
+
+msgid "Remove"
+msgstr "Remover"
+
+msgid "Key saved. Paste another one to replace it."
+msgstr "Chave salva. Cole outra para trocar."
+
+msgid "Paste your key here"
+msgstr "Cole a chave aqui"
+
+msgid "Checking…"
+msgstr "Verificando…"
+
+msgid "Save"
+msgstr "Salvar"
+
+msgid "Get your key at nexusmods.com (Settings → API Keys, at the bottom of the page)"
+msgstr "Gere a chave em nexusmods.com (Configurações → API Keys, no fim da página)"
+
+msgid "Open the Nexus \"Mod Manager Download\" button in linex-mods"
+msgstr "Abrir no linex-mods o botão \"Mod Manager Download\" do Nexus"
+
+msgid "The first time, your browser asks which program opens the link: pick linex-mods."
+msgstr "Na primeira vez, o navegador pergunta qual programa abre o link: escolha o linex-mods."
+
+msgid "Default"
+msgstr "Padrão"
+
+msgid "From wallpaper (wallust)"
+msgstr "Do papel de parede (wallust)"
+
+msgid "Read from {}. Follows your wallpaper."
+msgstr "Lido de {}. Muda junto com o papel de parede."
+
+msgid "No wallust palette found: the wallpaper theme shows up here once a palette exists."
+msgstr "O wallust não foi encontrado: o tema do papel de parede aparece aqui quando houver uma paleta gerada."
+
+msgid "Unity games from Steam that don't have a mod loader yet. Pick the one the game's mods ask for: each mod page says whether it uses MelonLoader or BepInEx."
+msgstr "Jogos Unity do Steam que ainda não têm loader de mods. Escolha o que os mods do jogo pedem: a página de cada mod diz se é MelonLoader ou BepInEx."
+
+msgid "Install {}"
+msgstr "Instalar {}"
+
+msgid "No mods installed. Use \"Add mod\", the Nexus \"Mod Manager Download\" button, or drop a file here."
+msgstr "Nenhum mod instalado. Use \"Adicionar mod\", o botão \"Mod Manager Download\" do Nexus ou solte um arquivo aqui."
+
+msgid "All"
+msgstr "Todos"
+
+msgid "Enabled"
+msgstr "Ligados"
+
+msgid "Disabled"
+msgstr "Desligados"
+
+msgid "Drop to install in {}"
+msgstr "Solte para instalar em {}"
+
+msgid "Installing…"
+msgstr "Instalando…"
+
+msgid "Add mod"
+msgstr "Adicionar mod"
+
+msgid "Open a game to install"
+msgstr "Abra um jogo para instalar"
+
+msgid ".zip, .7z or .rar files"
+msgstr "Arquivos .zip, .7z ou .rar"
+
+msgid "Notifications"
+msgstr "Notificações"
+
+msgid "Clear"
+msgstr "Limpar"
+
+msgid "Nothing here."
+msgstr "Nada por aqui."
+
+msgid "No mods here."
+msgstr "Nada aqui."
+
+msgid "No mod with that name."
+msgstr "Nenhum mod com esse nome."
+
+msgid "No Unity games without a loader found."
+msgstr "Nenhum jogo Unity sem loader encontrado."
+
+msgid "No games with a mod loader found."
+msgstr "Nenhum jogo com loader de mods encontrado."
+
+msgid "Settings"
+msgstr "Configurações"
+
+msgid "Add game"
+msgstr "Adicionar jogo"
+
+msgid "VERSION"
+msgstr "VERSÃO"
+
+msgid "AUTHOR"
+msgstr "AUTOR"
+
+msgid "ON"
+msgstr "ATIVO"
+
+msgid "GAMES"
+msgstr "JOGOS"
+
+msgid "WEBSITE LINKS"
+msgstr "LINKS DO SITE"
+
+msgid "APPEARANCE"
+msgstr "APARÊNCIA"
+
+msgid "Colors"
+msgstr "Cores"
+
+msgid "Copy option"
+msgstr "Copiar opção"
+
+msgid "API key"
+msgstr "Chave da API"
+
+msgid "Search mods"
+msgstr "Buscar mod"
+
+msgid "Active."
+msgstr "Ativo."
+
+msgid "Enable"
+msgstr "Ativar"
+
+msgid "Delete key"
+msgstr "Apagar chave"
+
+msgid "Open folder"
+msgstr "Abrir pasta"
+
+msgid "Play"
+msgstr "Jogar"
+
+msgid "LANGUAGE"
+msgstr "IDIOMA"
+
+msgid "Automatic"
+msgstr "Automático"

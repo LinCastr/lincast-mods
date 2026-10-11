@@ -18,11 +18,11 @@ fn apps_dir() -> std::path::PathBuf {
 /// atualização), o Linux devolve ".../linex-mods (deleted)"; gravar isso no atalho
 /// fazia o sistema pular o linex-mods e mandar o link para outro programa.
 fn exe_path() -> Result<String> {
-    let exe = std::env::current_exe().context("caminho do executável")?;
+    let exe = std::env::current_exe().context(tr!("path of the program", "caminho do executável"))?;
     let exe = exe.to_string_lossy();
     let exe = exe.strip_suffix(" (deleted)").unwrap_or(&exe).to_string();
     if exe.contains(['"', '`', '$', '\\', '\n']) {
-        bail!("o caminho do programa tem caracteres que o atalho não aceita: {exe}");
+        bail!("{}", tr!("the program path has characters a desktop entry can't hold: {exe}", "o caminho do programa tem caracteres que o atalho não aceita: {exe}"));
     }
     Ok(exe)
 }
@@ -113,7 +113,7 @@ pub fn register_nxm_handler() -> Result<()> {
         .is_ok_and(|s| s.success());
     let _ = Command::new("update-desktop-database").arg(&dir).status();
     if !ok {
-        bail!("o xdg-mime falhou (o pacote xdg-utils está instalado?)");
+        bail!("{}", tr!("xdg-mime failed (is the xdg-utils package installed?)", "o xdg-mime falhou (o pacote xdg-utils está instalado?)"));
     }
     Ok(())
 }

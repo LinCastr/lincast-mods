@@ -27,7 +27,7 @@ pub fn send(msg: &str) -> bool {
     for p in paths() {
         if let Ok(mut s) = UnixStream::connect(&p) {
             if s.write_all(format!("{msg}\n").as_bytes()).is_ok() {
-                crate::log::line(&format!("repassado para a janela aberta ({})", p.display()));
+                crate::log::line(&format!("handed over to the open window ({})", p.display()));
                 return true;
             }
         }

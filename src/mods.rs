@@ -273,7 +273,7 @@ pub fn list(game: &Game) -> Vec<Mod> {
 
 pub fn set_enabled(game: &Game, id: &str, enable: bool) -> Result<()> {
     if id.contains('/') || id == ".." || id.is_empty() {
-        bail!("nome de mod inválido: {id}");
+        bail!("{}", tr!("invalid mod name: {id}", "nome de mod inválido: {id}"));
     }
     let (from, to) = if enable {
         (game.disabled_dir(), game.mods_dir())
@@ -286,20 +286,20 @@ pub fn set_enabled(game: &Game, id: &str, enable: bool) -> Result<()> {
         if dst.exists() {
             return Ok(());
         }
-        bail!("mod não encontrado: {id}");
+        bail!("{}", tr!("mod not found: {id}", "mod não encontrado: {id}"));
     }
     if dst.exists() {
-        bail!("já existe um mod com o nome {id} em {}", to.display());
+        bail!("{}", tr!("there is already a mod named {id} in {}", "já existe um mod com o nome {id} em {}", to.display()));
     }
-    fs::create_dir_all(&to).with_context(|| format!("criando {}", to.display()))?;
-    fs::rename(&src, &dst).with_context(|| format!("movendo {} para {}", src.display(), dst.display()))
+    fs::create_dir_all(&to).with_context(|| tr!("creating {}", "criando {}", to.display()))?;
+    fs::rename(&src, &dst).with_context(|| tr!("moving {} to {}", "movendo {} para {}", src.display(), dst.display()))
 }
 
 /// Manda o mod para a Lixeira (recuperável), com tudo o que ele instalou e que
 /// nenhum outro mod usa. Mod sem registro (instalado à mão): só a própria unidade.
 pub fn uninstall(game: &Game, id: &str) -> Result<String> {
     if id.contains('/') || id == ".." || id.is_empty() {
-        bail!("nome de mod inválido: {id}");
+        bail!("{}", tr!("invalid mod name: {id}", "nome de mod inválido: {id}"));
     }
     let appid = game.steam.appid;
     let unit = format!("{}/{id}", game.loader.mods_dir());
@@ -318,7 +318,7 @@ pub fn uninstall(game: &Game, id: &str) -> Result<String> {
     for t in &targets {
         for p in [dir.join(t), disabled_root.join(t)] {
             if p.exists() {
-                trash::delete(&p).with_context(|| format!("mandando {} para a Lixeira", p.display()))?;
+                trash::delete(&p).with_context(|| tr!("sending {} to the trash", "mandando {} para a Lixeira", p.display()))?;
                 trashed.push(p);
             }
         }

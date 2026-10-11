@@ -145,7 +145,7 @@ component SearchBox inherits Rectangle {
                 edited => { root.edited(self.text); }
             }
             if root.text == "": Text {
-                text: "Buscar mod";
+                text: @tr("Search mods");
                 color: Theme.faint;
                 font-size: 13px;
                 vertical-alignment: center;
@@ -485,7 +485,7 @@ component ModRow inherits Rectangle {
             width: Cols.remove;
             Text {
                 x: parent.width - self.width;
-                text: root.confirm ? "Confirmar remoção" : "Remover";
+                text: root.confirm ? @tr("Confirm removal") : @tr("Remove");
                 color: root.confirm ? Theme.error : (rm.has-hover ? Theme.text : Theme.faint);
                 font-size: 12px;
                 vertical-alignment: center;
@@ -525,18 +525,20 @@ component SettingsPage inherits VerticalLayout {
     in property <bool> wallust-available;
     in property <string> wallust-path;
     in-out property <int> theme-mode;
+    in-out property <int> lang-mode;
     callback save-key(string);
     callback clear-key();
     callback register-handler();
     callback open-key-page();
     callback theme-changed(int);
+    callback lang-changed(int);
     padding: 36px;
     padding-top: 32px;
     spacing: 8px;
     alignment: start;
 
     Text {
-        text: "Configurações";
+        text: @tr("Settings");
         color: Theme.text;
         font-size: 22px;
         font-weight: 700;
@@ -545,7 +547,7 @@ component SettingsPage inherits VerticalLayout {
 
     GroupLabel { text: "NEXUS MODS"; }
     Text {
-        text: "Chave da API";
+        text: @tr("API key");
         color: Theme.text;
     }
     HorizontalLayout {
@@ -575,7 +577,7 @@ component SettingsPage inherits VerticalLayout {
             }
             if key.text == "": Text {
                 x: 10px;
-                text: root.nexus-ok ? "Chave salva. Cole outra para trocar." : "Cole a chave aqui";
+                text: root.nexus-ok ? @tr("Key saved. Paste another one to replace it.") : @tr("Paste your key here");
                 color: Theme.faint;
                 font-size: 13px;
                 vertical-alignment: center;
@@ -583,7 +585,7 @@ component SettingsPage inherits VerticalLayout {
             }
         }
         Button {
-            text: root.key-busy ? "Verificando…" : "Salvar";
+            text: root.key-busy ? @tr("Checking…") : @tr("Save");
             primary: true;
             clicked => {
                 if key.text != "" && !root.key-busy {
@@ -593,7 +595,7 @@ component SettingsPage inherits VerticalLayout {
             }
         }
         if root.nexus-ok: Button {
-            text: "Apagar chave";
+            text: @tr("Delete key");
             clicked => { root.clear-key(); }
         }
     }
@@ -604,53 +606,64 @@ component SettingsPage inherits VerticalLayout {
         wrap: word-wrap;
     }
     if !root.nexus-ok: LinkText {
-        text: "Gerar a chave em nexusmods.com (Configurações → API Keys, no fim da página)";
+        text: @tr("Get your key at nexusmods.com (Settings → API Keys, at the bottom of the page)");
         clicked => { root.open-key-page(); }
     }
 
     Rectangle { height: 22px; }
-    GroupLabel { text: "LINKS DO SITE"; }
+    GroupLabel { text: @tr("WEBSITE LINKS"); }
     Text {
-        text: "Abrir no linex-mods o botão \"Mod Manager Download\" do Nexus";
+        text: @tr("Open the Nexus \"Mod Manager Download\" button in linex-mods");
         color: Theme.text;
     }
     if root.handler-ok: Text {
-        text: "Ativo.";
+        text: @tr("Active.");
         color: Theme.dim;
         font-size: 12px;
     }
     if !root.handler-ok: HorizontalLayout {
         alignment: start;
         Button {
-            text: "Ativar";
+            text: @tr("Enable");
             clicked => { root.register-handler(); }
         }
     }
     Text {
-        text: "Na primeira vez, o navegador pergunta qual programa abre o link: escolha o linex-mods.";
+        text: @tr("The first time, your browser asks which program opens the link: pick linex-mods.");
         color: Theme.faint;
         font-size: 12px;
         wrap: word-wrap;
     }
 
     Rectangle { height: 22px; }
-    GroupLabel { text: "APARÊNCIA"; }
+    GroupLabel { text: @tr("LANGUAGE"); }
+    HorizontalLayout {
+        alignment: start;
+        Segmented {
+            options: [@tr("Automatic"), "English", "Português"];
+            current <=> root.lang-mode;
+            changed(i) => { root.lang-changed(i); }
+        }
+    }
+
+    Rectangle { height: 22px; }
+    GroupLabel { text: @tr("APPEARANCE"); }
     Text {
-        text: "Cores";
+        text: @tr("Colors");
         color: Theme.text;
     }
     HorizontalLayout {
         alignment: start;
         Segmented {
-            options: root.wallust-available ? ["Padrão", "Do papel de parede (wallust)"] : ["Padrão"];
+            options: root.wallust-available ? [@tr("Default"), @tr("From wallpaper (wallust)")] : [@tr("Default")];
             current <=> root.theme-mode;
             changed(i) => { root.theme-changed(i); }
         }
     }
     Text {
         text: root.wallust-available
-            ? "Lido de " + root.wallust-path + ". Muda junto com o papel de parede."
-            : "O wallust não foi encontrado: o tema do papel de parede aparece aqui quando houver uma paleta gerada.";
+            ? @tr("Read from {}. Follows your wallpaper.", root.wallust-path)
+            : @tr("No wallust palette found: the wallpaper theme shows up here once a palette exists.");
         color: Theme.faint;
         font-size: 12px;
         wrap: word-wrap;
@@ -666,20 +679,20 @@ component AddGamePage inherits VerticalLayout {
     spacing: 8px;
 
     Text {
-        text: "Adicionar jogo";
+        text: @tr("Add game");
         color: Theme.text;
         font-size: 22px;
         font-weight: 700;
     }
     Text {
-        text: "Jogos Unity do Steam que ainda não têm loader de mods. Escolha o que os mods do jogo pedem: a página de cada mod diz se é MelonLoader ou BepInEx.";
+        text: @tr("Unity games from Steam that don't have a mod loader yet. Pick the one the game's mods ask for: each mod page says whether it uses MelonLoader or BepInEx.");
         color: Theme.dim;
         font-size: 12px;
         wrap: word-wrap;
     }
     Rectangle { height: 12px; }
     if root.games.length == 0: Text {
-        text: "Nenhum jogo Unity sem loader encontrado.";
+        text: @tr("No Unity games without a loader found.");
         color: Theme.faint;
         font-size: 13px;
     }
@@ -725,7 +738,7 @@ component AddGamePage inherits VerticalLayout {
                         }
                     }
                     if root.installing == g.appid: Text {
-                        text: "Instalando…";
+                        text: @tr("Installing…");
                         color: Theme.dim;
                         font-size: 12px;
                         vertical-alignment: center;
@@ -796,6 +809,7 @@ export component AppWindow inherits Window {
     in property <bool> wallust-available;
     in property <string> wallust-path;
     in-out property <int> theme-mode;
+    in-out property <int> lang-mode;
 
     callback select-game(int);
     callback toggle-mod(string, bool);
@@ -816,6 +830,7 @@ export component AppWindow inherits Window {
     callback register-handler();
     callback open-key-page();
     callback theme-changed(int);
+    callback lang-changed(int);
     callback nxm-received(string);
     callback open-panel();
     callback clear-notices();
@@ -852,7 +867,7 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { height: 18px; }
                 GroupLabel {
-                    text: "JOGOS";
+                    text: @tr("GAMES");
                     x: 10px;
                 }
                 Rectangle { height: 6px; }
@@ -867,13 +882,13 @@ export component AppWindow inherits Window {
                 }
                 if root.games.length == 0: Text {
                     x: 10px;
-                    text: "Nenhum jogo com loader de mods encontrado.";
+                    text: @tr("No games with a mod loader found.");
                     color: Theme.faint;
                     wrap: word-wrap;
                 }
                 Rectangle { }
                 SideLink {
-                    text: "Adicionar jogo";
+                    text: @tr("Add game");
                     icon: @image-url("icons/plus.svg");
                     selected: root.page == 2;
                     clicked => {
@@ -882,7 +897,7 @@ export component AppWindow inherits Window {
                     }
                 }
                 SideLink {
-                    text: "Configurações";
+                    text: @tr("Settings");
                     icon: @image-url("icons/gear.svg");
                     selected: root.page == 1;
                     clicked => {
@@ -902,6 +917,8 @@ export component AppWindow inherits Window {
                 wallust-available: root.wallust-available;
                 wallust-path: root.wallust-path;
                 theme-mode <=> root.theme-mode;
+                lang-mode <=> root.lang-mode;
+                lang-changed(i) => { root.lang-changed(i); }
                 save-key(k) => { root.save-key(k); }
                 clear-key => { root.clear-key(); }
                 register-handler => { root.register-handler(); }
@@ -968,7 +985,7 @@ export component AppWindow inherits Window {
                                 max-width: self.preferred-width;
                             }
                             if root.game-fix != "": LinkText {
-                                text: "Copiar opção";
+                                text: @tr("Copy option");
                                 vertical-alignment: center;
                                 horizontal-stretch: 0;
                                 clicked => { root.copy-fix(); }
@@ -983,25 +1000,25 @@ export component AppWindow inherits Window {
                             spacing: 8px;
                             alignment: end;
                             if root.game-missing-loader != "": Button {
-                                text: root.installing >= 0 ? "Instalando…" : "Instalar " + root.game-missing-loader;
+                                text: root.installing >= 0 ? @tr("Installing…") : @tr("Install {}", root.game-missing-loader);
                                 enabled: root.installing < 0;
                                 clicked => {
                                     root.install-loader(root.games[root.current].appid, root.game-missing-loader);
                                 }
                             }
                             Button {
-                                text: "Abrir pasta";
+                                text: @tr("Open folder");
                                 icon: @image-url("icons/folder.svg");
                                 clicked => { root.open-folder(); }
                             }
                             Button {
-                                text: root.busy ? "Instalando…" : "Adicionar mod";
+                                text: root.busy ? @tr("Installing…") : @tr("Add mod");
                                 icon: @image-url("icons/plus.svg");
                                 enabled: !root.busy;
                                 clicked => { root.add-mod(); }
                             }
                             Button {
-                                text: "Jogar";
+                                text: @tr("Play");
                                 icon: @image-url("icons/play.svg");
                                 primary: true;
                                 clicked => { root.play(); }
@@ -1024,7 +1041,7 @@ export component AppWindow inherits Window {
                     edited(t) => { root.filter-changed(t); }
                 }
                 Segmented {
-                    options: ["Todos", "Ligados", "Desligados"];
+                    options: [@tr("All"), @tr("Enabled"), @tr("Disabled")];
                     current <=> root.filter-mode;
                     changed => { root.filter-changed(root.filter); }
                 }
@@ -1045,10 +1062,10 @@ export component AppWindow inherits Window {
                 height: 24px;
                 GroupLabel { text: "MOD"; vertical-alignment: center; }
                 Rectangle { }
-                if root.show-author: GroupLabel { width: Cols.author; text: "AUTOR"; vertical-alignment: center; }
-                GroupLabel { width: Cols.version; text: "VERSÃO"; vertical-alignment: center; }
+                if root.show-author: GroupLabel { width: Cols.author; text: @tr("AUTHOR"); vertical-alignment: center; }
+                GroupLabel { width: Cols.version; text: @tr("VERSION"); vertical-alignment: center; }
                 Rectangle { width: Cols.remove; }
-                GroupLabel { width: Cols.toggle; text: "ATIVO"; vertical-alignment: center; horizontal-alignment: right; }
+                GroupLabel { width: Cols.toggle; text: @tr("ON"); vertical-alignment: center; horizontal-alignment: right; }
             }
             HorizontalLayout {
                 padding-left: 28px;
@@ -1073,9 +1090,9 @@ export component AppWindow inherits Window {
                         open-url(u) => { root.open-url(u); }
                     }
                     if root.mods.length == 0 && root.current >= 0: Text {
-                        text: root.filter != "" ? "Nenhum mod com esse nome."
-                            : root.filter-mode != 0 ? "Nada aqui."
-                            : "Nenhum mod instalado. Use \"Adicionar mod\" ou o botão \"Mod Manager Download\" do Nexus.";
+                        text: root.filter != "" ? @tr("No mod with that name.")
+                            : root.filter-mode != 0 ? @tr("No mods here.")
+                            : @tr("No mods installed. Use \"Add mod\", the Nexus \"Mod Manager Download\" button, or drop a file here.");
                         color: Theme.faint;
                         horizontal-alignment: center;
                         height: 100px;
@@ -1101,14 +1118,14 @@ export component AppWindow inherits Window {
                 alignment: center;
                 spacing: 8px;
                 Text {
-                    text: root.page == 0 && root.game-name != "" ? "Solte para instalar em " + root.game-name : "Abra um jogo para instalar";
+                    text: root.page == 0 && root.game-name != "" ? @tr("Drop to install in {}", root.game-name) : @tr("Open a game to install");
                     color: Theme.text;
                     font-size: 22px;
                     font-weight: 700;
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: "Arquivos .zip, .7z ou .rar";
+                    text: @tr(".zip, .7z or .rar files");
                     color: Theme.dim;
                     font-size: 13px;
                     horizontal-alignment: center;
@@ -1158,7 +1175,7 @@ export component AppWindow inherits Window {
             spacing: 8px;
             HorizontalLayout {
                 Text {
-                    text: "Notificações";
+                    text: @tr("Notifications");
                     color: Theme.text;
                     font-size: 14px;
                     font-weight: 700;
@@ -1166,13 +1183,13 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { }
                 if root.notices.length > 0: LinkText {
-                    text: "Limpar";
+                    text: @tr("Clear");
                     vertical-alignment: center;
                     clicked => { root.clear-notices(); }
                 }
             }
             if root.notices.length == 0: Text {
-                text: "Nada por aqui.";
+                text: @tr("Nothing here.");
                 color: Theme.faint;
                 font-size: 12px;
                 vertical-alignment: center;

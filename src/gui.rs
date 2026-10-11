@@ -52,11 +52,11 @@ fn proton_override_missing(g: &Game) -> Option<String> {
 /// Linha de estado do jogo, se é aviso, e a opção de inicialização a copiar (se faltar).
 fn status_of(g: &Game) -> (String, bool, String) {
     if g.installed_loader.is_none() {
-        return (format!("{} não está instalado: os mods não vão carregar.", g.loader.label()), true, String::new());
+        return (tr!("{} is not installed: mods won't load.", "{} não está instalado: os mods não vão carregar.", g.loader.label()), true, String::new());
     }
     if let Some(opt) = proton_override_missing(g) {
         return (
-            format!("O Proton vai ignorar o {}. Copie a opção e cole em Steam → Propriedades → Opções de inicialização.", g.loader.label()),
+            tr!("Proton will ignore {}. Copy the option and paste it in Steam → Properties → Launch options.", "O Proton vai ignorar o {}. Copie a opção e cole em Steam → Propriedades → Opções de inicialização.", g.loader.label()),
             true,
             opt,
         );
@@ -145,12 +145,12 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
         })
         .collect();
     let counts = if !q.is_empty() || mode != 0 {
-        format!("{} de {total}", items.len())
+        tr!("{} of {total}", "{} de {total}", items.len())
     } else {
         match total {
             0 => String::new(),
-            1 => format!("1 mod · {on} ligado"),
-            _ => format!("{total} mods · {on} ligados"),
+            1 => tr!("1 mod · {on} enabled", "1 mod · {on} ligado"),
+            _ => tr!("{total} mods · {on} enabled", "{total} mods · {on} ligados"),
         }
     };
     ui.set_counts(counts.into());
@@ -299,7 +299,7 @@ fn game_items(games: &[Game]) -> Vec<GameItem> {
             name: g.steam.name.clone().into(),
             loader: match g.installed_loader {
                 Some(l) => l.label().into(),
-                None => format!("{} não instalado", g.loader.label()).into(),
+                None => tr!("{} not installed", "{} não instalado", g.loader.label()).into(),
             },
             icon: load_image(steam::icon(g.steam.appid)),
         })
@@ -345,10 +345,10 @@ fn notes_init(ui: &AppWindow) {
 fn ago(t: u64) -> String {
     let d = crate::records::now().saturating_sub(t);
     match d {
-        0..=59 => "agora".into(),
-        60..=3599 => format!("há {} min", d / 60),
-        3600..=86399 => format!("há {} h", d / 3600),
-        _ => format!("há {} dias", d / 86400),
+        0..=59 => tr!("now", "agora"),
+        60..=3599 => tr!("{} min ago", "há {} min", d / 60),
+        3600..=86399 => tr!("{} h ago", "há {} h", d / 3600),
+        _ => tr!("{} days ago", "há {} dias", d / 86400),
     }
 }
 
@@ -376,7 +376,7 @@ fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
         let n = c.as_mut()?;
         let id = n.next;
         n.next += 1;
-        let notice = Notice { id, text: msg.clone(), error: err, when: "agora".into() };
+        let notice = Notice { id, text: msg.clone(), error: err, when: tr!("now", "agora").into() };
         n.toasts.push(notice.clone());
         n.history.insert(0, notice);
         n.stamps.insert(0, crate::records::now());
@@ -409,7 +409,7 @@ fn notify(summary: &str, body: &str, err: bool) {
         n.urgency(notify_rust::Urgency::Critical);
     }
     if let Err(e) = n.show() {
-        log::line(&format!("notificação falhou: {e}"));
+        log::line(&format!("notification failed: {e}"));
     }
 }
 
@@ -419,15 +419,15 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     let link = match nexus::NxmLink::parse(url) {
         Ok(l) => l,
         Err(e) => {
-            log::line(&format!("link recusado: {e:#}"));
-            return set_msg(ui, format!("Link do Nexus: {e:#}"), true);
+            log::line(&format!("link rejected: {e:#}"));
+            return set_msg(ui, tr!("Nexus link: {e:#}", "Link do Nexus: {e:#}"), true);
         }
     };
-    log::line(&format!("recebido {}", link.redacted()));
+    log::line(&format!("received {}", link.redacted()));
     let Some(i) = state.games.iter().position(|g| g.matches_nexus(&link.domain)) else {
         return set_msg(
             ui,
-            format!("O link é de \"{}\", que não está entre os jogos detectados com loader de mods.", link.domain),
+            tr!("The link is for \"{}\", which is not among the detected games with a mod loader.", "O link é de \"{}\", que não está entre os jogos detectados com loader de mods.", link.domain),
             true,
         );
     };
@@ -435,7 +435,7 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     ui.set_current(i as i32);
     select(ui, state, i);
     let game = state.games[i].clone();
-    set_progress(ui, "Baixando do Nexus…");
+    set_progress(ui, tr!("Downloading from the Nexus…", "Baixando do Nexus…"));
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let appid = game.steam.appid as i32;
@@ -443,14 +443,14 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         let finish = |w: &slint::Weak<AppWindow>, msg: String, err: bool| {
             log::line(&msg);
             if err {
-                notify("Mod não instalado", &msg, true);
+                notify(&tr!("Mod not installed", "Mod não instalado"), &msg, true);
             } else {
-                notify(msg.trim_start_matches("Instalado: "), &format!("Instalado em {game_name}"), false);
+                notify(msg.split_once(": ").map_or(msg.as_str(), |(_, n)| n), &tr!("Installed in {game_name}", "Instalado em {game_name}"), false);
             }
             let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_nxm_finished(appid, msg.into(), err));
         };
         let Some(key) = nexus::load_key() else {
-            return finish(&weak, "Falta a chave da API do Nexus: veja em Configurações.".into(), true);
+            return finish(&weak, tr!("The Nexus API key is missing: see Settings.", "Falta a chave da API do Nexus: veja em Configurações."), true);
         };
         let mut last = u64::MAX;
         let w2 = weak.clone();
@@ -459,29 +459,29 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
             if step != last {
                 last = step;
                 let txt = if total > 0 {
-                    format!("Baixando do Nexus… {step}%")
+                    tr!("Downloading from the Nexus… {step}%", "Baixando do Nexus… {step}%")
                 } else {
-                    format!("Baixando do Nexus… {step} MB")
+                    tr!("Downloading from the Nexus… {step} MB", "Baixando do Nexus… {step} MB")
                 };
                 let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
             }
         });
         let dl = match dl {
             Ok(d) => d,
-            Err(e) => return finish(&weak, format!("Download falhou: {e:#}"), true),
+            Err(e) => return finish(&weak, tr!("Download failed: {e:#}", "Download falhou: {e:#}"), true),
         };
-        let _ = weak.upgrade_in_event_loop(|ui| set_progress(&ui, "Instalando…"));
+        let _ = weak.upgrade_in_event_loop(|ui| set_progress(&ui, tr!("Installing…", "Instalando…")));
         match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
             Ok(rec) => {
                 let _ = std::fs::remove_file(&dl.path);
                 match rec.warning {
-                    Some(w) => finish(&weak, format!("{} instalado, mas {w}", rec.name), true),
-                    None => finish(&weak, format!("Instalado: {}", rec.name), false),
+                    Some(w) => finish(&weak, tr!("{} installed, but {w}", "{} instalado, mas {w}", rec.name), true),
+                    None => finish(&weak, tr!("Installed: {}", "Instalado: {}", rec.name), false),
                 }
             }
             Err(e) => finish(
                 &weak,
-                format!("{}: {e:#} (o arquivo ficou em {})", dl.mod_name, dl.path.display()),
+                tr!("{}: {e:#} (the file was kept in {})", "{}: {e:#} (o arquivo ficou em {})", dl.mod_name, dl.path.display()),
                 true,
             ),
         }
@@ -494,10 +494,10 @@ fn refresh_nexus_status(ui: &AppWindow) {
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let (txt, ok) = match nexus::load_key() {
-            None => ("Nenhuma chave salva. Sem ela o botão do site não consegue baixar.".to_string(), false),
+            None => (tr!("No key saved. Without it the website button can't download.", "Nenhuma chave salva. Sem ela o botão do site não consegue baixar."), false),
             Some(k) => match nexus::validate(&k) {
                 Ok((name, premium)) => (connected(&name, premium), true),
-                Err(e) => (format!("Há uma chave salva, mas não funcionou: {e:#}"), false),
+                Err(e) => (tr!("A key is saved, but it didn't work: {e:#}", "Há uma chave salva, mas não funcionou: {e:#}"), false),
             },
         };
         let _ = weak.upgrade_in_event_loop(move |ui| {
@@ -508,7 +508,7 @@ fn refresh_nexus_status(ui: &AppWindow) {
 }
 
 fn connected(name: &str, premium: bool) -> String {
-    format!("Conectado como {name} · conta {}", if premium { "premium" } else { "gratuita" })
+    if premium { tr!("Signed in as {name} · premium account", "Conectado como {name} · conta premium") } else { tr!("Signed in as {name} · free account", "Conectado como {name} · conta gratuita") }
 }
 
 /// Modo de teste (desenvolvimento): LINEX_SNAPSHOT=arquivo.png salva um print da
@@ -606,19 +606,19 @@ fn is_archive(p: &std::path::Path) -> bool {
 /// Instala arquivos soltos na janela no jogo aberto.
 fn install_files(ui: &AppWindow, state: &State, files: Vec<PathBuf>) {
     if ui.get_page() != 0 {
-        return set_msg(ui, "Abra um jogo antes de soltar o arquivo.", true);
+        return set_msg(ui, tr!("Open a game before dropping the file.", "Abra um jogo antes de soltar o arquivo."), true);
     }
     let Some(game) = state.game().cloned() else {
-        return set_msg(ui, "Abra um jogo antes de soltar o arquivo.", true);
+        return set_msg(ui, tr!("Open a game before dropping the file.", "Abra um jogo antes de soltar o arquivo."), true);
     };
     let (ok, bad): (Vec<_>, Vec<_>) = files.into_iter().partition(|f| is_archive(f));
     for b in bad {
-        set_msg(ui, format!("{}: não é .zip, .7z nem .rar.", b.file_name().unwrap_or_default().to_string_lossy()), true);
+        set_msg(ui, tr!("{}: not a .zip, .7z or .rar file.", "{}: não é .zip, .7z nem .rar.", b.file_name().unwrap_or_default().to_string_lossy()), true);
     }
     if ok.is_empty() {
         return;
     }
-    set_progress(ui, format!("Instalando em {}…", game.steam.name));
+    set_progress(ui, tr!("Installing in {}…", "Instalando em {}…", game.steam.name));
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let _lock = INSTALL_LOCK.lock();
@@ -627,8 +627,8 @@ fn install_files(ui: &AppWindow, state: &State, files: Vec<PathBuf>) {
             let name = install::clean_stem(f);
             results.push(match install::install_archive(&game, f, None, None) {
                 Ok(rec) => match rec.warning {
-                    Some(w) => (format!("{} instalado, mas {w}", rec.name), true),
-                    None => (format!("Instalado: {}", rec.name), false),
+                    Some(w) => (tr!("{} installed, but {w}", "{} instalado, mas {w}", rec.name), true),
+                    None => (tr!("Installed: {}", "Instalado: {}", rec.name), false),
                 },
                 Err(e) => (format!("{name}: {e:#}"), true),
             });
@@ -661,7 +661,7 @@ fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
         "bepinex" => games::Loader::BepInEx,
         "smapi" => {
             open("https://smapi.io");
-            return set_msg(ui, "O SMAPI tem instalador próprio: a página dele abriu no navegador.", false);
+            return set_msg(ui, tr!("SMAPI has its own installer: its page opened in your browser.", "O SMAPI tem instalador próprio: a página dele abriu no navegador."), false);
         }
         _ => return,
     };
@@ -673,10 +673,10 @@ fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
         .or_else(|| steam::installed_games().into_iter().find(|g| g.appid as i32 == appid).map(|g| g.dir));
     let Some(dir) = dir else { return };
     let Some(il2cpp) = loaders::unity_kind(&dir) else {
-        return set_msg(ui, "Este jogo não parece ser um jogo Unity de Windows: o loader não serve para ele.", true);
+        return set_msg(ui, tr!("This doesn't look like a Windows Unity game: the loader won't work with it.", "Este jogo não parece ser um jogo Unity de Windows: o loader não serve para ele."), true);
     };
     ui.set_installing(appid);
-    set_progress(ui, format!("Baixando o {}…", loader.label()));
+    set_progress(ui, tr!("Downloading {}…", "Baixando o {}…", loader.label()));
     let weak = ui.as_weak();
     std::thread::spawn(move || {
         let mut last = u64::MAX;
@@ -686,16 +686,16 @@ fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
             let step = if total > 0 { done * 100 / total } else { done / (1024 * 1024) };
             if step != last {
                 last = step;
-                let txt = if total > 0 { format!("Baixando o {label}… {step}%") } else { format!("Baixando o {label}… {step} MB") };
+                let txt = if total > 0 { tr!("Downloading {label}… {step}%", "Baixando o {label}… {step}%") } else { tr!("Downloading {label}… {step} MB", "Baixando o {label}… {step} MB") };
                 let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
             }
         });
         let (msg, err) = match r {
             Ok(file) => {
-                log::line(&format!("loader instalado: {file} em {}", dir.display()));
-                (format!("{label} instalado. Abra o jogo uma vez para ele terminar de se configurar."), false)
+                log::line(&format!("loader installed: {file} in {}", dir.display()));
+                (tr!("{label} installed. Start the game once so it can finish setting itself up.", "{label} instalado. Abra o jogo uma vez para ele terminar de se configurar."), false)
             }
-            Err(e) => (format!("Não deu para instalar o {label}: {e:#}"), true),
+            Err(e) => (tr!("Couldn't install {label}: {e:#}", "Não deu para instalar o {label}: {e:#}"), true),
         };
         let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_loader_finished(appid, msg.into(), err));
     });
@@ -715,6 +715,15 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         icons: Default::default(),
     }));
 
+    {
+        let lang = config::load().lang;
+        crate::i18n::apply(&lang);
+        ui.set_lang_mode(match lang.as_str() {
+            "en" => 1,
+            "pt" => 2,
+            _ => 0,
+        });
+    }
     apply_theme(&ui);
     notes_init(&ui);
     {
@@ -836,7 +845,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let Some(g) = st.game() else { return };
             match mods::set_enabled(g, &id, on) {
                 Ok(()) => {}
-                Err(e) => set_msg(&ui, format!("Não deu para {} {id}: {e:#}", if on { "ligar" } else { "desligar" }), true),
+                Err(e) => set_msg(&ui, if on { tr!("Couldn't enable {id}: {e:#}", "Não deu para ligar {id}: {e:#}") } else { tr!("Couldn't disable {id}: {e:#}", "Não deu para desligar {id}: {e:#}") }, true),
             }
             refresh_mods(&ui, &st);
         });
@@ -848,8 +857,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let st = state.borrow();
             let Some(g) = st.game() else { return };
             match mods::uninstall(g, &id) {
-                Ok(name) => set_msg(&ui, format!("{name} foi para a Lixeira."), false),
-                Err(e) => set_msg(&ui, format!("Não deu para remover {id}: {e:#}"), true),
+                Ok(name) => set_msg(&ui, tr!("{name} was moved to the trash.", "{name} foi para a Lixeira."), false),
+                Err(e) => set_msg(&ui, tr!("Couldn't remove {id}: {e:#}", "Não deu para remover {id}: {e:#}"), true),
             }
             refresh_mods(&ui, &st);
         });
@@ -883,8 +892,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             std::thread::spawn(move || {
                 let _lock = INSTALL_LOCK.lock();
                 let files = rfd::FileDialog::new()
-                    .set_title("Escolha os arquivos do mod")
-                    .add_filter("Arquivos de mod", &["zip", "7z", "rar"])
+                    .set_title(tr!("Choose the mod files", "Escolha os arquivos do mod"))
+                    .add_filter(tr!("Mod archives", "Arquivos de mod"), &["zip", "7z", "rar"])
                     .pick_files()
                     .unwrap_or_default();
                 let mut ok = Vec::new();
@@ -893,18 +902,18 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
                     let name = install::clean_stem(f);
                     match install::install_archive(&game, f, None, None) {
                         Ok(rec) => match rec.warning {
-                            Some(w) => errors.push(format!("{name} instalado, mas {w}")),
+                            Some(w) => errors.push(tr!("{name} installed, but {w}", "{name} instalado, mas {w}")),
                             None => ok.push(name),
                         },
                         Err(e) => errors.push(format!("{name}: {e:#}")),
                     }
                 }
                 let (msg, is_err) = if !errors.is_empty() {
-                    (format!("Falhou — {}", errors.join(" | ")), true)
+                    (tr!("Failed — {}", "Falhou — {}", errors.join(" | ")), true)
                 } else if ok.len() == 1 {
-                    (format!("Instalado: {}", ok[0]), false)
+                    (tr!("Installed: {}", "Instalado: {}", ok[0]), false)
                 } else if !ok.is_empty() {
-                    (format!("{} mods instalados", ok.len()), false)
+                    (tr!("{} mods installed", "{} mods instalados", ok.len()), false)
                 } else {
                     (String::new(), false)
                 };
@@ -956,10 +965,10 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
                 // Só guarda chave que o Nexus aceita.
                 let (txt, ok) = match nexus::validate(&key) {
                     Ok((name, premium)) => match nexus::save_key(&key) {
-                        Ok(place) => (format!("{}. Chave guardada {place}.", connected(&name, premium)), true),
-                        Err(e) => (format!("A chave funciona, mas não deu para guardar: {e:#}"), false),
+                        Ok(place) => (tr!("{}. Key saved {place}.", "{}. Chave guardada {place}.", connected(&name, premium)), true),
+                        Err(e) => (tr!("The key works, but it couldn't be saved: {e:#}", "A chave funciona, mas não deu para guardar: {e:#}"), false),
                     },
-                    Err(e) => (format!("Chave não aceita: {e:#}"), false),
+                    Err(e) => (tr!("Key not accepted: {e:#}", "Chave não aceita: {e:#}"), false),
                 };
                 let _ = weak.upgrade_in_event_loop(move |ui| {
                     ui.set_key_busy(false);
@@ -975,7 +984,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             nexus::clear_key();
             if let Some(ui) = weak.upgrade() {
                 ui.set_nexus_ok(false);
-                ui.set_nexus_status("Chave apagada.".into());
+                ui.set_nexus_status(tr!("Key deleted.", "Chave apagada.").into());
             }
         });
     }
@@ -984,8 +993,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         ui.on_register_handler(move || {
             let Some(ui) = weak.upgrade() else { return };
             match desktop::register_nxm_handler() {
-                Ok(()) => set_msg(&ui, "Pronto: o botão \"Mod Manager Download\" agora abre aqui.", false),
-                Err(e) => set_msg(&ui, format!("Não deu para registrar: {e:#}"), true),
+                Ok(()) => set_msg(&ui, tr!("Done: the \"Mod Manager Download\" button now opens here.", "Pronto: o botão \"Mod Manager Download\" agora abre aqui."), false),
+                Err(e) => set_msg(&ui, tr!("Couldn't register: {e:#}", "Não deu para registrar: {e:#}"), true),
             }
             ui.set_handler_ok(desktop::is_nxm_handler());
         });
@@ -1007,7 +1016,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
                 refresh_mods(&ui, &st);
                 if n > 0 {
-                    set_msg(&ui, if n == 1 { "1 mod tem versão nova no Nexus.".to_string() } else { format!("{n} mods têm versão nova no Nexus.") }, false);
+                    set_msg(&ui, if n == 1 { tr!("1 mod has a new version on the Nexus.", "1 mod tem versão nova no Nexus.") } else { tr!("{n} mods have a new version on the Nexus.", "{n} mods têm versão nova no Nexus.") }, false);
                 }
             }
         });
@@ -1017,9 +1026,9 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         ui.on_copy_fix(move || {
             let Some(ui) = weak.upgrade() else { return };
             if copy_text(&ui.get_game_fix()) {
-                set_msg(&ui, "Copiado. Cole nas opções de inicialização do jogo e reabra o jogo.", false);
+                set_msg(&ui, tr!("Copied. Paste it in the game's launch options and restart the game.", "Copiado. Cole nas opções de inicialização do jogo e reabra o jogo."), false);
             } else {
-                set_msg(&ui, format!("Não deu para copiar (falta o wl-copy ou xclip). Use: {}", ui.get_game_fix()), true);
+                set_msg(&ui, tr!("Couldn't copy (wl-copy or xclip is missing). Use: {}", "Não deu para copiar (falta o wl-copy ou xclip). Use: {}", ui.get_game_fix()), true);
             }
         });
     }
@@ -1059,6 +1068,24 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
 
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_lang_changed(move |i| {
+            let mut cfg = config::load();
+            cfg.lang = ["", "en", "pt"][i.clamp(0, 2) as usize].into();
+            config::save(&cfg);
+            crate::i18n::apply(&cfg.lang);
+            // Texts built in Rust (status line, counts, game list) follow on the next
+            // refresh; do it now.
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            ui.set_games(ModelRc::new(VecModel::from(game_items(&st.games))));
+            if let Some(i) = st.current {
+                select(&ui, &mut st, i);
+            }
+            refresh_nexus_status(&ui);
+        });
+    }
     {
         let weak = ui.as_weak();
         ui.on_theme_changed(move |i| {
