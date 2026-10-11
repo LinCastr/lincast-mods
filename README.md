@@ -102,6 +102,7 @@ linex-mods install <game> <file>...
 linex-mods enable|disable|remove <game> <mod>
 linex-mods unity                list Unity games without a loader
 linex-mods loader <game> melonloader|bepinex
+linex-mods updates <game>       check Nexus mods for new versions
 ```
 
 `<game>` is the Steam AppID or part of the name.

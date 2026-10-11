@@ -246,3 +246,15 @@ fn remove_ignores_record_paths_outside_the_game() {
     assert!(game.join("StardewValley.exe").is_file(), "the game folder went to the trash");
     assert!(outside.is_file(), "a file outside the game went to the trash");
 }
+
+#[test]
+fn help_and_missing_steam() {
+    let h = Home::new("help");
+    assert!(h.ok(&["--help"]).contains("usage:"));
+    assert!(h.ok(&["games"]).contains("No Steam game with a mod loader"));
+    fs::remove_dir_all(h.0.join(".local/share/Steam")).unwrap();
+    let (ok, text) = h.run(&["games"]);
+    assert!(!ok && text.contains("Steam not found"), "{text}");
+    let (ok, text) = h.run(&["frobnicate"]);
+    assert!(!ok && text.contains("unknown command"), "{text}");
+}

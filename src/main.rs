@@ -30,11 +30,20 @@ const USAGE: &str = "usage:
   linex-mods remove <game> <mod>  (sends it to the trash)
   linex-mods unity                list Unity games without a loader
   linex-mods loader <game> melonloader|bepinex
+  linex-mods updates <game>       check the game's Nexus mods for new versions
 
 <game> is the Steam AppID or part of the name.";
 
 fn game(q: &str) -> Result<games::Game> {
     games::find(q).with_context(|| format!("game not found (or it has no mod loader): {q}"))
+}
+
+/// Without Steam every list is empty; say why instead of printing nothing.
+fn require_steam() -> Result<()> {
+    if steam::steam_roots().is_empty() {
+        bail!("{}", tr!("Steam not found (looked in ~/.local/share/Steam, ~/.steam and the Flatpak folder)", "Steam não encontrada (procurei em ~/.local/share/Steam, ~/.steam e na pasta do Flatpak)"));
+    }
+    Ok(())
 }
 
 fn run(args: &[String]) -> Result<()> {
@@ -49,8 +58,14 @@ fn run(args: &[String]) -> Result<()> {
     };
     let rest: Vec<&str> = args[1..].iter().map(String::as_str).collect();
     match (cmd, rest.as_slice()) {
+        ("help" | "-h" | "--help", _) => println!("{USAGE}"),
         ("games", []) => {
-            for g in games::moddable_games() {
+            require_steam()?;
+            let list = games::moddable_games();
+            if list.is_empty() {
+                println!("{}", tr!("No Steam game with a mod loader. `linex-mods unity` lists Unity games that can get one.", "Nenhum jogo da Steam com loader de mods. `linex-mods unity` lista os jogos Unity que podem receber um."));
+            }
+            for g in list {
                 let state = match g.installed_loader {
                     Some(l) => l.label().to_string(),
                     None => format!("{} not installed", g.loader.label()),
@@ -61,7 +76,11 @@ fn run(args: &[String]) -> Result<()> {
         }
         ("mods", [q]) => {
             let g = game(q)?;
-            for m in mods::list(&g) {
+            let list = mods::list(&g);
+            if list.is_empty() {
+                println!("{}", tr!("No mods installed.", "Nenhum mod instalado."));
+            }
+            for m in list {
                 let on = if m.enabled { "on " } else { "off" };
                 let ver = m.version.map(|v| format!(" {v}")).unwrap_or_default();
                 let by = m.author.map(|a| format!(" — {a}")).unwrap_or_default();
@@ -86,7 +105,12 @@ fn run(args: &[String]) -> Result<()> {
         ("disable", [q, id]) => mods::set_enabled(&game(q)?, id, false)?,
         ("remove", [q, id]) => println!("{} was moved to the trash", mods::uninstall(&game(q)?, id)?),
         ("unity", []) => {
-            for u in loaders::unity_games_without_loader() {
+            require_steam()?;
+            let list = loaders::unity_games_without_loader();
+            if list.is_empty() {
+                println!("{}", tr!("No Unity game without a loader.", "Nenhum jogo Unity sem loader."));
+            }
+            for u in list {
                 println!("{:>8}  {}  [{}]", u.steam.appid, u.steam.name, if u.il2cpp { "IL2CPP" } else { "Mono" });
             }
         }
@@ -105,7 +129,49 @@ fn run(args: &[String]) -> Result<()> {
             let file = loaders::install(&g.dir, loader, il2cpp, |_, _| {})?;
             println!("{file} installed in {}", g.dir.display());
         }
-        _ => bail!("{USAGE}"),
+        ("updates", [q]) => updates(&game(q)?)?,
+        _ => bail!("{}\n\n{USAGE}", tr!("unknown command or wrong arguments", "comando desconhecido ou argumentos errados")),
+    }
+    Ok(())
+}
+
+/// Nexus versions of the game's mods (cached for 6 h, like the window) against the
+/// installed ones.
+fn updates(g: &games::Game) -> Result<()> {
+    let key = nexus::load_key().context(tr!("no Nexus API key: add it in the window's Settings", "sem chave da API do Nexus: coloque em Configurações, na janela"))?;
+    let list: Vec<_> = mods::list(g).into_iter().filter(|m| m.nexus_key.is_some()).collect();
+    if list.is_empty() {
+        println!("{}", tr!("None of these mods has a Nexus link to check.", "Nenhum destes mods tem link do Nexus para conferir."));
+        return Ok(());
+    }
+    let mut info = meta::load_info();
+    let mut newer = 0;
+    for m in &list {
+        let Some((domain, id)) = m.nexus_key.clone() else { continue };
+        let k = meta::info_key(&domain, id);
+        let i = match info.get(&k).filter(|i| meta::is_fresh(i)).cloned() {
+            Some(i) => i,
+            None => match nexus::mod_info(&domain, id, &key) {
+                Ok(i) => {
+                    info.insert(k, i.clone());
+                    i
+                }
+                Err(e) => {
+                    eprintln!("{}: {e:#}", m.name);
+                    continue;
+                }
+            },
+        };
+        if let (Some(remote), Some(local)) = (&i.version, &m.version)
+            && nexus::is_newer(remote, local) {
+            newer += 1;
+            println!("{}  {local} → {remote}   {}", m.name, nexus::mod_page(&domain, id));
+        }
+    }
+    meta::save_info(&info);
+    if newer == 0 {
+        let total = list.len();
+        println!("{}", tr!("All {total} mods linked to the Nexus are up to date.", "Os {total} mods ligados ao Nexus estão atualizados."));
     }
     Ok(())
 }
