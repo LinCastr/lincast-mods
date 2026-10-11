@@ -122,7 +122,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn miniatura_quadrada() {
+    fn square_thumbnail() {
         let dir = std::env::temp_dir().join(format!("linex-thumb-{}", std::process::id()));
         let src = image::RgbaImage::from_pixel(300, 100, image::Rgba([200, 30, 30, 255]));
         let mut png = Vec::new();

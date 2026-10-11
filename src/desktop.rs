@@ -1,4 +1,4 @@
-//! Atalho no menu de aplicativos e registro como tratador dos links nxm://.
+//! Applications-menu entry and registration as the nxm:// link handler.
 
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -14,9 +14,9 @@ fn apps_dir() -> std::path::PathBuf {
         .join("applications")
 }
 
-/// Caminho do programa. Se o binário foi trocado com o app aberto (recompilação,
-/// atualização), o Linux devolve ".../linex-mods (deleted)"; gravar isso no atalho
-/// fazia o sistema pular o linex-mods e mandar o link para outro programa.
+/// Path of the program. If the binary was replaced while the app was open (rebuild,
+/// update), Linux returns ".../linex-mods (deleted)"; writing that into the entry made
+/// the system skip linex-mods and send the link to another program.
 fn exe_path() -> Result<String> {
     let exe = std::env::current_exe().context(tr!("path of the program", "caminho do executável"))?;
     let exe = exe.to_string_lossy();
@@ -27,8 +27,8 @@ fn exe_path() -> Result<String> {
     Ok(exe)
 }
 
-/// O linex-mods já é quem abre os links nxm://? Confere também se o atalho aponta
-/// para um programa que existe: com Exec quebrado o xdg-mime ignora a escolha.
+/// Is linex-mods already the one opening nxm:// links? Also checks that the entry points
+/// to a program that exists: with a broken Exec, xdg-mime ignores the choice.
 pub fn is_nxm_handler() -> bool {
     let chosen = Command::new("xdg-mime")
         .args(["query", "default", "x-scheme-handler/nxm"])
@@ -54,10 +54,10 @@ fn icon_path() -> std::path::PathBuf {
     apps_dir().parent().unwrap().join("icons/hicolor/scalable/apps/linex-mods.svg")
 }
 
-/// Ao abrir: cria o atalho no menu de aplicativos (com ícone) se ainda não existe.
-/// Se existe mas aponta para um programa que sumiu (mudou de lugar), regrava com o
-/// caminho atual. Só nesses casos: regravar sempre fazia qualquer cópia aberta
-/// (ex.: a de desenvolvimento) tomar os links para si.
+/// On start: creates the applications-menu entry (with icon) if it doesn't exist yet.
+/// If it exists but points to a program that is gone (moved), rewrites it with the
+/// current path. Only in those cases: always rewriting made any copy that was opened
+/// (e.g. the development one) take the links for itself.
 pub fn refresh_desktop_file() {
     let icon = icon_path();
     if !icon.is_file() {
@@ -66,7 +66,7 @@ pub fn refresh_desktop_file() {
     }
     let file = apps_dir().join(DESKTOP_ID);
     let exists = file.is_file();
-    // Atalho de versão antiga (ícone genérico): só troca o ícone, mantém o resto.
+    // Entry from an old version (generic icon): swap the icon, keep the rest.
     if let Ok(txt) = fs::read_to_string(&file)
         && txt.contains("Icon=applications-games") {
         let _ = fs::write(&file, txt.replace("Icon=applications-games", "Icon=linex-mods"));
@@ -79,8 +79,8 @@ pub fn refresh_desktop_file() {
 }
 
 fn write_desktop(exe: &str) -> Result<()> {
-    // Aspas só quando há espaço: o xdg-mime não entende Exec="..." e, ao não achar
-    // o programa, ignora a escolha e manda o link para outro tratador.
+    // Quotes only when there is a space: xdg-mime doesn't understand Exec="..." and, not
+    // finding the program, ignores the choice and sends the link to another handler.
     let exec = if exe.contains(char::is_whitespace) { format!("\"{exe}\"") } else { exe.to_string() };
     let dir = apps_dir();
     fs::create_dir_all(&dir)?;

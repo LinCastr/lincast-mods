@@ -1,4 +1,4 @@
-//! Leitor mínimo do formato KeyValues em texto (VDF) do Steam:
+//! Minimal reader for Steam's text KeyValues format (VDF):
 //! `libraryfolders.vdf`, `appmanifest_*.acf`, `config.vdf`.
 
 #[derive(Debug, Clone)]
@@ -8,7 +8,7 @@ pub enum Vdf {
 }
 
 impl Vdf {
-    /// Filho pelo nome, sem diferenciar maiúsculas (o Steam mistura "AppState"/"appstate").
+    /// Child by name, case-insensitive (Steam mixes "AppState"/"appstate").
     pub fn get(&self, key: &str) -> Option<&Vdf> {
         match self {
             Vdf::Obj(items) => items
@@ -71,7 +71,7 @@ fn tokenize(src: &str) -> Vec<Tok> {
                 }
             }
             c if c.is_whitespace() => {}
-            // Token sem aspas (raro, mas existe em arquivos antigos).
+            // Unquoted token (rare, but old files have them).
             _ => {
                 let mut s = String::from(c);
                 while let Some(&n) = chars.peek() {
@@ -114,9 +114,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn le_libraryfolders() {
+    fn reads_libraryfolders() {
         let v = parse(
-            r#""libraryfolders" { "0" { "path" "/home/x/Steam" "apps" { "413150" "123" } } // fim
+            r#""libraryfolders" { "0" { "path" "/home/x/Steam" "apps" { "413150" "123" } } // end
                "1" { "path" "/mnt/Jogos\\SteamLibrary" } }"#,
         );
         let lf = v.get("LibraryFolders").unwrap();

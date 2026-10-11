@@ -1,4 +1,4 @@
-//! Janela principal.
+//! Main window.
 
 use crate::games::{self, Game};
 use crate::{config, desktop, install, ipc, loaders, log, mods, nexus, steam, theme};
@@ -13,7 +13,7 @@ slint::include_modules!();
 struct State {
     games: Vec<Game>,
     current: Option<usize>,
-    /// Versões novas no Nexus: (appid, mod_id) → versão. Checado uma vez por jogo.
+    /// Newer versions on the Nexus: (appid, mod_id) → version. Checked once per game.
     updates: std::collections::HashMap<(u32, u64), String>,
     checked: std::collections::HashSet<u32>,
     icons: RefCell<std::collections::HashMap<PathBuf, Image>>,
@@ -34,8 +34,8 @@ impl State {
     }
 }
 
-/// O Proton só carrega a DLL do loader se WINEDLLOVERRIDES mandar; vale tanto a
-/// variável da sessão (o rice hollow-wired define uma) quanto a opção de inicialização.
+/// Proton only loads the loader's DLL if WINEDLLOVERRIDES says so; both the session
+/// variable (the hollow-wired rice sets one) and the launch option count.
 fn proton_override_missing(g: &Game) -> Option<String> {
     let dll = g.loader.proxy_dll()?;
     if g.installed_loader.is_none() || !g.steam.uses_proton() {
@@ -49,7 +49,7 @@ fn proton_override_missing(g: &Game) -> Option<String> {
     Some(format!("WINEDLLOVERRIDES=\"{dll}=n,b\" %command%"))
 }
 
-/// Linha de estado do jogo, se é aviso, e a opção de inicialização a copiar (se faltar).
+/// The game's status line, whether it is a warning, and the launch option to copy (if missing).
 fn status_of(g: &Game) -> (String, bool, String) {
     if g.installed_loader.is_none() {
         return (tr!("{} is not installed: mods won't load.", "{} não está instalado: os mods não vão carregar.", g.loader.label()), true, String::new());
@@ -65,7 +65,7 @@ fn status_of(g: &Game) -> (String, bool, String) {
     (format!("{}{proton}", g.loader.label()), false, String::new())
 }
 
-/// Copia para a área de transferência (wl-copy no Wayland, xclip/xsel no X11).
+/// Copies to the clipboard (wl-copy on Wayland, xclip/xsel on X11).
 fn copy_text(text: &str) -> bool {
     use std::io::Write;
     let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some() || WAYLAND_DISPLAY.get().is_some();
@@ -183,8 +183,6 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     }
 }
 
-/// Pergunta ao Nexus a versão atual dos mods baixados por lá (uma vez por jogo
-/// por sessão, fora da thread da janela). Sem chave, não faz nada.
 /// Icons and Nexus info for the game's mods, once per game per session, off the UI
 /// thread: local icon.png thumbnails first, then Nexus version and picture (cached
 /// for 6 h; without an API key only the cache is used). Ends by reporting mods with
@@ -379,7 +377,7 @@ fn color(c: theme::Rgb) -> slint::Color {
     slint::Color::from_rgb_u8(b(c.0), b(c.1), b(c.2))
 }
 
-/// Aplica o tema escolhido. Sem paleta do wallust, cai no padrão.
+/// Applies the chosen theme. Without a wallust palette, falls back to the default.
 fn apply_theme(ui: &AppWindow) {
     let palette = theme::find_palette();
     ui.set_wallust_available(palette.is_some());
@@ -432,11 +430,11 @@ fn open(target: &str) {
     }
 }
 
-/// Avisos do app: pilha no canto (cada um some em 2,5 s) e histórico no sino.
+/// App notices: a stack in the corner (each disappears after 2.5 s) and a history under the bell.
 struct Notes {
     toasts: Rc<VecModel<Notice>>,
     history: Rc<VecModel<Notice>>,
-    /// Hora (segundos) de cada aviso do histórico, para o "há 3 min".
+    /// Time (seconds) of each notice in the history, for the "3 min ago".
     stamps: Vec<u64>,
     next: i32,
     unseen: i32,
@@ -481,8 +479,8 @@ fn remove_toast(id: i32) {
     });
 }
 
-/// Aviso: entra na pilha (some em 2,5 s) e no histórico. Mensagem vazia só limpa o
-/// andamento.
+/// Notice: goes on the stack (disappears after 2.5 s) and into the history. An empty
+/// message only clears the progress.
 fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
     let msg: SharedString = msg.into();
     ui.set_progress(SharedString::new());
@@ -514,13 +512,13 @@ fn set_msg(ui: &AppWindow, msg: impl Into<SharedString>, err: bool) {
     }
 }
 
-/// Andamento (download, instalação): fica no topo da pilha até o próximo aviso.
+/// Progress (download, install): stays on top of the stack until the next notice.
 fn set_progress(ui: &AppWindow, msg: impl Into<SharedString>) {
     ui.set_progress(msg.into());
 }
 
-/// Notificação do sistema, só para o que chega de fora da janela (clique no site):
-/// nessa hora o app costuma estar atrás do navegador.
+/// System notification, only for what comes from outside the window (a click on the
+/// website): at that moment the app is usually behind the browser.
 fn notify(summary: &str, body: &str, err: bool) {
     let mut n = notify_rust::Notification::new();
     n.appname("linex-mods").summary(summary).body(body).icon("applications-games");
@@ -532,8 +530,8 @@ fn notify(summary: &str, body: &str, err: bool) {
     }
 }
 
-/// Link nxm:// recebido (do navegador ou de outra instância): baixa e instala
-/// fora da thread da janela, mostrando o progresso na linha de mensagem.
+/// nxm:// link received (from the browser or another instance): downloads and installs
+/// off the UI thread, showing progress in the message line.
 fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     let link = match nexus::NxmLink::parse(url) {
         Ok(l) => l,
@@ -607,7 +605,7 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
     });
 }
 
-/// Estado da chave do Nexus, lido fora da thread da janela (o chaveiro pode demorar).
+/// Nexus key status, read off the UI thread (the keyring can be slow).
 fn refresh_nexus_status(ui: &AppWindow) {
     ui.set_handler_ok(desktop::is_nxm_handler());
     let weak = ui.as_weak();
@@ -630,9 +628,9 @@ fn connected(name: &str, premium: bool) -> String {
     if premium { tr!("Signed in as {name} · premium account", "Conectado como {name} · conta premium") } else { tr!("Signed in as {name} · free account", "Conectado como {name} · conta gratuita") }
 }
 
-/// Modo de teste (desenvolvimento): LINEX_SNAPSHOT=arquivo.png salva um print da
-/// janela e fecha. LINEX_GAME escolhe o jogo (parte do nome), LINEX_PAGE=1 abre as
-/// Configurações, LINEX_MESSAGE mostra um aviso.
+/// Test mode (development): LINEX_SNAPSHOT=file.png saves a screenshot of the window
+/// and quits. LINEX_GAME picks the game (part of the name), LINEX_PAGE=1 opens
+/// Settings, LINEX_MESSAGE shows a notice.
 fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     let Ok(out) = std::env::var("LINEX_SNAPSHOT") else { return };
     if let Ok(q) = std::env::var("LINEX_GAME") {
@@ -689,27 +687,26 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     });
 }
 
-/// WAYLAND_DISPLAY original, quando o app abre pelo XWayland (ver `prefer_x11`).
+/// Original WAYLAND_DISPLAY, when the app opens through XWayland (see `prefer_x11`).
 static WAYLAND_DISPLAY: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
 
-/// Arrastar arquivos para a janela só funciona no X11: o winit (camada de janelas
-/// do Slint) ainda não implementa arrastar e soltar no Wayland. Com o XWayland
-/// disponível, o app abre por ele (LINEX_WAYLAND=1 força o Wayland). Tem que rodar
-/// antes de qualquer thread.
+/// Dragging files onto the window only works on X11: winit (Slint's windowing layer)
+/// doesn't implement drag and drop on Wayland yet. With XWayland available, the app
+/// opens through it (LINEX_WAYLAND=1 forces Wayland). Must run before any thread.
 pub fn prefer_x11() {
     if std::env::var_os("LINEX_WAYLAND").is_some() || std::env::var_os("DISPLAY").is_none() {
         return;
     }
     if let Some(w) = std::env::var_os("WAYLAND_DISPLAY") {
         let _ = WAYLAND_DISPLAY.set(w);
-        // Sem Xft.dpi, o winit calcula a escala pelo tamanho físico do monitor e a
-        // janela abria uns 33% maior que no Wayland. Com Xft.dpi (o KDE define quando
-        // há escala), vale o que o sistema escolheu.
+        // Without Xft.dpi, winit computes the scale from the monitor's physical size and
+        // the window opened about 33% larger than on Wayland. With Xft.dpi (KDE sets it
+        // when there is scaling), the system's choice wins.
         let xft = Command::new("xrdb")
             .arg("-query")
             .output()
             .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("Xft.dpi"));
-        // SAFETY: chamado no início do main, com uma thread só.
+        // SAFETY: called at the start of main, with a single thread.
         unsafe {
             std::env::remove_var("WAYLAND_DISPLAY");
             if !xft && std::env::var_os("WINIT_X11_SCALE_FACTOR").is_none() {
@@ -719,8 +716,8 @@ pub fn prefer_x11() {
     }
 }
 
-/// Uma instalação por vez: arrastar vários arquivos dispara várias threads, e o
-/// registro de cada jogo é lido e regravado inteiro.
+/// One install at a time: dragging several files starts several threads, and each
+/// game's record is read and rewritten whole.
 static INSTALL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn is_archive(p: &std::path::Path) -> bool {
@@ -729,7 +726,7 @@ fn is_archive(p: &std::path::Path) -> bool {
         .is_some_and(|e| matches!(e.as_str(), "zip" | "7z" | "rar"))
 }
 
-/// Instala arquivos soltos na janela no jogo aberto.
+/// Installs files dropped on the window into the open game.
 fn install_files(ui: &AppWindow, state: &State, files: Vec<PathBuf>) {
     if ui.get_page() != 0 {
         return set_msg(ui, tr!("Open a game before dropping the file.", "Abra um jogo antes de soltar o arquivo."), true);
@@ -830,7 +827,7 @@ fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
 pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     desktop::refresh_desktop_file();
     let ui = AppWindow::new()?;
-    // Só funciona depois da plataforma existir (o AppWindow::new a cria).
+    // Only works after the platform exists (AppWindow::new creates it).
     let app_id = std::env::var("LINEX_APP_ID").unwrap_or_else(|_| "linex-mods".into());
     let _ = slint::set_xdg_app_id(app_id);
     let state = Rc::new(RefCell::new(State {
@@ -931,7 +928,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             if err {
                 return;
             }
-            // O jogo passa a ter loader: entra (ou se atualiza) na lista e abre.
+            // The game now has a loader: it joins (or updates in) the list and opens.
             let mut st = state.borrow_mut();
             st.games = games::moddable_games();
             ui.set_games(ModelRc::new(VecModel::from(game_items(&st.games))));
@@ -946,7 +943,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
         let (weak, state) = (ui.as_weak(), state.clone());
-        // O X11 manda um evento por arquivo; junta os que chegam juntos.
+        // X11 sends one event per file; group the ones that arrive together.
         let pending: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
         ui.window().on_winit_window_event(move |_, ev| {
             let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
@@ -1041,7 +1038,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let Some(game) = state.borrow().game().cloned() else { return };
             ui.set_busy(true);
             let weak = weak.clone();
-            // O seletor de arquivos e a extração rodam fora da thread da janela.
+            // The file picker and the extraction run off the UI thread.
             std::thread::spawn(move || {
                 let _lock = INSTALL_LOCK.lock();
                 let files = rfd::FileDialog::new()
@@ -1115,7 +1112,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let weak = weak.clone();
             let key = key.to_string();
             std::thread::spawn(move || {
-                // Só guarda chave que o Nexus aceita.
+                // Only save a key the Nexus accepts.
                 let (txt, ok) = match nexus::validate(&key) {
                     Ok((name, premium)) => match nexus::save_key(&key) {
                         Ok(place) => (tr!("{}. Key saved {place}.", "{}. Chave guardada {place}.", connected(&name, premium)), true),
@@ -1185,8 +1182,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             }
         });
     }
-    // Atualiza a lista quando a pasta de mods muda por fora (gerenciador de
-    // arquivos, outro programa): confere a cada 2 s.
+    // Refresh the list when the mods folder changes from outside (file manager,
+    // another program): checks every 2 s.
     let watch_timer = slint::Timer::default();
     {
         let (weak, state) = (ui.as_weak(), state.clone());
@@ -1210,7 +1207,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
 
-    // Links que chegarem por outra instância (clique no site com a janela aberta).
+    // Links handed over by another instance (a click on the website with the window open).
     {
         let weak = ui.as_weak();
         ipc::listen(move |msg| {
@@ -1249,7 +1246,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             }
         });
     }
-    // A paleta muda quando o papel de parede muda: confere a cada 3 s.
+    // The palette changes when the wallpaper changes: checks every 3 s.
     let theme_timer = slint::Timer::default();
     {
         let weak = ui.as_weak();
@@ -1265,7 +1262,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     }
 
-    // Abre no último jogo usado.
+    // Open on the last game used.
     let start = {
         let st = state.borrow();
         let last = config::load().last_game;

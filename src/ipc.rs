@@ -1,7 +1,7 @@
-//! Instância única. Clicar em "Mod Manager Download" faz o navegador abrir outro
-//! processo com o link; ele repassa o link para a janela aberta por um socket Unix.
-//! Tenta mais de um caminho porque o processo do navegador pode não ter o mesmo
-//! XDG_RUNTIME_DIR (problema que o Amethyst documenta).
+//! Single instance. Clicking "Mod Manager Download" makes the browser start another
+//! process with the link; it hands the link to the open window over a Unix socket.
+//! Tries more than one path because the browser's process may not have the same
+//! XDG_RUNTIME_DIR (a problem Amethyst documents).
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -22,7 +22,7 @@ fn paths() -> Vec<PathBuf> {
     v
 }
 
-/// Manda a mensagem para a instância aberta. `false` = não há nenhuma.
+/// Sends the message to the open instance. `false` = there is none.
 pub fn send(msg: &str) -> bool {
     for p in paths() {
         if let Ok(mut s) = UnixStream::connect(&p)
@@ -34,10 +34,10 @@ pub fn send(msg: &str) -> bool {
     false
 }
 
-/// Escuta em todos os caminhos; cada linha recebida vai para `on_message`.
+/// Listens on every path; each line received goes to `on_message`.
 pub fn listen(on_message: impl Fn(String) + Send + Sync + Clone + 'static) {
     for p in paths() {
-        // Socket que sobrou de uma execução que caiu: ninguém atende, pode apagar.
+        // Socket left over from a crashed run: nobody answers, safe to remove.
         if p.exists() && UnixStream::connect(&p).is_err() {
             let _ = fs::remove_file(&p);
         }
@@ -56,7 +56,7 @@ pub fn listen(on_message: impl Fn(String) + Send + Sync + Clone + 'static) {
     }
 }
 
-/// Apaga os sockets ao fechar a janela.
+/// Removes the sockets when the window closes.
 pub fn cleanup() {
     for p in paths() {
         let _ = fs::remove_file(p);

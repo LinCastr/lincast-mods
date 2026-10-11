@@ -1,4 +1,4 @@
-//! Descobre a instalação do Steam, as bibliotecas e os jogos instalados.
+//! Finds the Steam installation, its libraries and the installed games.
 
 use crate::vdf;
 use std::collections::HashSet;
@@ -13,9 +13,9 @@ pub struct SteamGame {
 }
 
 impl SteamGame {
-    /// Jogo de Windows rodando pelo Proton. O prefixo em compatdata não basta: ele fica
-    /// para trás quando um jogo nativo já foi aberto pelo Proton alguma vez (era o caso
-    /// do Stardew). Então: tem .exe na pasta e nenhum executável Linux (ELF).
+    /// Windows game running through Proton. A prefix in compatdata is not enough: it stays
+    /// behind when a native game was once opened through Proton (Stardew was such a
+    /// case). So: there is an .exe in the folder and no Linux (ELF) executable.
     pub fn uses_proton(&self) -> bool {
         let Ok(rd) = fs::read_dir(&self.dir) else { return false };
         let mut exe = false;
@@ -49,7 +49,7 @@ pub fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
 }
 
-/// Pastas do Steam existentes: nativo, link antigo e Flatpak.
+/// Existing Steam folders: native, the old symlink and Flatpak.
 pub fn steam_roots() -> Vec<PathBuf> {
     let h = home();
     let candidates = [
@@ -106,8 +106,8 @@ fn read_manifest(library: &Path, acf: &Path) -> Option<SteamGame> {
     })
 }
 
-/// Arte do jogo no cache do Steam (`library_hero_blur.jpg`, `logo.png`...). Versões
-/// novas do Steam guardam em subpastas com hash, então olha um nível abaixo também.
+/// Game art in Steam's cache (`library_hero_blur.jpg`, `logo.png`...). Newer Steam
+/// versions keep it in hashed subfolders, so look one level down too.
 pub fn art(appid: u32, file: &str) -> Option<PathBuf> {
     for root in steam_roots() {
         let dir = root.join("appcache/librarycache").join(appid.to_string());
@@ -127,8 +127,8 @@ pub fn art(appid: u32, file: &str) -> Option<PathBuf> {
     None
 }
 
-/// Ícone pequeno do jogo (32×32). No cache novo do Steam é o .jpg com nome de hash
-/// (40 caracteres hexadecimais) dentro da pasta do jogo; no antigo, `<appid>_icon.jpg`.
+/// Small game icon (32×32). In Steam's new cache it is the .jpg with a hash name
+/// (40 hex characters) inside the game's folder; in the old one, `<appid>_icon.jpg`.
 pub fn icon(appid: u32) -> Option<PathBuf> {
     for root in steam_roots() {
         let cache = root.join("appcache/librarycache");
@@ -150,7 +150,7 @@ pub fn icon(appid: u32) -> Option<PathBuf> {
     None
 }
 
-/// Opções de inicialização do jogo (de qualquer usuário logado neste Steam).
+/// The game's launch options (from any user logged in to this Steam).
 pub fn launch_options(appid: u32) -> Vec<String> {
     let mut out = Vec::new();
     for root in steam_roots() {

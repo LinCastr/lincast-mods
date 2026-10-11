@@ -1,4 +1,4 @@
-//! Lista, liga e desliga os mods de um jogo.
+//! Lists, enables and disables a game's mods.
 
 use crate::games::{Game, Loader};
 use crate::records;
@@ -8,13 +8,13 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Mod {
-    /// Nome do arquivo ou pasta dentro da pasta de mods; identifica o mod.
+    /// File or folder name inside the mods folder; identifies the mod.
     pub id: String,
     pub name: String,
     pub version: Option<String>,
     pub author: Option<String>,
     pub enabled: bool,
-    /// Instalado pelo botão do Nexus (tem a origem no registro).
+    /// Installed through the Nexus button (the record has its source).
     pub from_nexus: bool,
     pub nexus: Option<records::NexusSource>,
     /// Mod on the Nexus (game domain, mod id): from the install record or, for SMAPI,
@@ -39,7 +39,7 @@ fn smapi_nexus_id(man: &serde_json::Value) -> Option<u64> {
 }
 
 /// "GrowableMoondewNectarMod" → "Growable Moondew Nectar Mod", "SR2_INF" → "SR2 INF".
-/// Só para DLL sem registro (instalada à mão): o nome real do mod não está em lugar nenhum.
+/// Only for a DLL without a record (installed by hand): the mod's real name is nowhere.
 fn humanize(stem: &str) -> String {
     // Names that must not be split ("BepInEx" would become "Bep In Ex").
     const KEEP: [&str; 3] = ["BepInEx", "MelonLoader", "IL2CPP"];
@@ -80,7 +80,7 @@ pub fn mod_path(game: &Game, id: &str) -> Option<std::path::PathBuf> {
     [game.mods_dir().join(id), game.disabled_dir().join(id)].into_iter().find(|p| p.exists())
 }
 
-/// Arquivos que acompanham mods mas não são mods.
+/// Files that come with mods but are not mods.
 fn is_junk(name: &str) -> bool {
     let n = name.to_lowercase();
     n.starts_with('.')
@@ -92,8 +92,8 @@ fn is_junk(name: &str) -> bool {
         || n == "license"
 }
 
-/// O manifest.json do SMAPI aceita comentários, vírgula sobrando e BOM;
-/// o serde_json não, então limpamos antes.
+/// SMAPI's manifest.json allows comments, trailing commas and a BOM;
+/// serde_json doesn't, so clean it first.
 pub fn lenient_json(src: &str) -> Option<serde_json::Value> {
     let src = src.trim_start_matches('\u{feff}');
     let mut out = String::with_capacity(src.len());
@@ -137,7 +137,7 @@ pub fn lenient_json(src: &str) -> Option<serde_json::Value> {
             _ => out.push(c),
         }
     }
-    // Vírgula antes de } ou ].
+    // Comma before } or ].
     let mut clean = String::with_capacity(out.len());
     let bytes: Vec<char> = out.chars().collect();
     let mut in_str = false;
@@ -165,7 +165,7 @@ pub fn json_field(v: &serde_json::Value, key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Primeiro manifest.json da pasta (ela mesma ou até dois níveis abaixo).
+/// First manifest.json of the folder (itself or up to two levels down).
 fn find_manifest(dir: &Path, depth: u32) -> Option<serde_json::Value> {
     let m = dir.join("manifest.json");
     if m.is_file() {
@@ -229,8 +229,8 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
                 return None;
             }
             if let Some(man) = find_manifest(path, 2) {
-                // Pacote com vários componentes ("Ridgeside Village/[CP] …"): o nome
-                // da pasta descreve melhor que o do primeiro componente.
+                // Package with several components ("Ridgeside Village/[CP] …"): the
+                // folder name describes it better than the first component's.
                 if path.join("manifest.json").is_file()
                     && let Some(n) = json_field(&man, "Name") {
                     m.name = n;
@@ -253,8 +253,8 @@ pub fn list(game: &Game) -> Vec<Mod> {
     let mut mods = Vec::new();
     scan(game.loader, &game.mods_dir(), true, &mut mods);
     scan(game.loader, &game.disabled_dir(), false, &mut mods);
-    // DLLs têm nome de arquivo ("ContinuousSprint"); o registro guarda o nome do mod.
-    // Mods do SMAPI já têm nome no manifest.json.
+    // DLLs have a file name ("ContinuousSprint"); the record keeps the mod's name.
+    // SMAPI mods already have a name in manifest.json.
     let recs = records::load(game.steam.appid);
     for m in &mut mods {
         if let Some(i) = recs.owner(&format!("{}/{}", game.loader.mods_dir(), m.id)) {
@@ -304,8 +304,8 @@ pub fn set_enabled(game: &Game, id: &str, enable: bool) -> Result<()> {
     fs::rename(&src, &dst).with_context(|| tr!("moving {} to {}", "movendo {} para {}", src.display(), dst.display()))
 }
 
-/// Manda o mod para a Lixeira (recuperável), com tudo o que ele instalou e que
-/// nenhum outro mod usa. Mod sem registro (instalado à mão): só a própria unidade.
+/// Sends the mod to the trash (recoverable), with everything it installed that no
+/// other mod uses. A mod without a record (installed by hand): only its own unit.
 pub fn uninstall(game: &Game, id: &str) -> Result<String> {
     if id.contains('/') || id == ".." || id.is_empty() {
         bail!("{}", tr!("invalid mod name: {id}", "nome de mod inválido: {id}"));
@@ -332,7 +332,7 @@ pub fn uninstall(game: &Game, id: &str) -> Result<String> {
             }
         }
     }
-    // Pastas que ficaram vazias (ex.: UserLibs/<mod>/), sem subir até as do loader.
+    // Folders left empty (e.g. UserLibs/<mod>/), without climbing up to the loader's.
     for p in &trashed {
         let mut cur = p.parent().map(Path::to_path_buf);
         while let Some(d) = cur {
@@ -357,7 +357,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nomes_de_dll_legiveis() {
+    fn readable_dll_names() {
         assert_eq!(humanize("GrowableMoondewNectarMod"), "Growable Moondew Nectar Mod");
         assert_eq!(humanize("SR2_INF"), "SR2 INF");
         assert_eq!(humanize("RichPresenceMod"), "Rich Presence Mod");
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_com_comentario_e_virgula() {
+    fn manifest_with_comment_and_trailing_comma() {
         let v = lenient_json(
             "\u{feff}{\n // comentário\n \"Name\": \"Mod // não é comentário\",\n \"Version\": \"1.0\", /* x */\n}",
         )

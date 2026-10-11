@@ -1,4 +1,4 @@
-//! Instala o loader de mods (MelonLoader ou BepInEx) em jogos Unity rodando pelo Proton.
+//! Installs the mod loader (MelonLoader or BepInEx) in Unity games running through Proton.
 
 use crate::games::Loader;
 use crate::steam::{self, SteamGame};
@@ -7,8 +7,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-/// Jogo Unity de Windows (roda pelo Proton). `il2cpp` = compilado em C++ (GameAssembly.dll);
-/// senão é Mono. Isso decide qual BepInEx serve.
+/// Windows Unity game (runs through Proton). `il2cpp` = compiled to C++ (GameAssembly.dll);
+/// otherwise Mono. This decides which BepInEx fits.
 #[derive(Debug, Clone)]
 pub struct UnityGame {
     pub steam: SteamGame,
@@ -28,7 +28,7 @@ pub fn unity_kind(dir: &Path) -> Option<bool> {
     if dir.join("UnityPlayer.dll").is_file() {
         return Some(false);
     }
-    // Unity antigo (sem UnityPlayer.dll): <Jogo>_Data/Managed/UnityEngine.dll.
+    // Old Unity (no UnityPlayer.dll): <Game>_Data/Managed/UnityEngine.dll.
     fs::read_dir(dir).ok()?.flatten().find_map(|e| {
         let p = e.path();
         let is_data = p.is_dir() && e.file_name().to_string_lossy().ends_with("_Data");
@@ -42,7 +42,7 @@ pub fn unity_kind(dir: &Path) -> Option<bool> {
     })
 }
 
-/// Jogos Unity instalados que ainda não têm loader.
+/// Installed Unity games that don't have a loader yet.
 pub fn unity_games_without_loader() -> Vec<UnityGame> {
     steam::installed_games()
         .into_iter()
@@ -58,7 +58,7 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
-/// Arquivo da última versão de um repositório do GitHub cujo nome satisfaz `pick`.
+/// Asset of a GitHub repository's latest release whose name satisfies `pick`.
 fn github_asset(repo: &str, tag: Option<&str>, pick: impl Fn(&str) -> bool) -> Result<(String, String)> {
     let url = match tag {
         Some(t) => format!("https://api.github.com/repos/{repo}/releases/tags/{t}"),
@@ -77,8 +77,8 @@ fn github_asset(repo: &str, tag: Option<&str>, pick: impl Fn(&str) -> bool) -> R
         .ok_or_else(|| anyhow!("{}", tr!("couldn't find the right file in the latest release of {repo}", "não achei o arquivo certo na versão mais nova de {repo}")))
 }
 
-/// Build "bleeding edge" mais nova do BepInEx 6 (a página lista da mais nova para a
-/// mais velha). Os jogos IL2CPP recentes precisam dela; a pre.2 do GitHub é antiga.
+/// Newest BepInEx 6 "bleeding edge" build (the page lists newest first). Recent
+/// IL2CPP games need it; the pre.2 on GitHub is old.
 fn bepinex_be(il2cpp: bool) -> Result<(String, String)> {
     let kind = if il2cpp { "IL2CPP" } else { "Mono" };
     let html = agent()
@@ -120,8 +120,8 @@ fn cache_dir() -> PathBuf {
         .join("linex-mods/loaders")
 }
 
-/// Baixa (ou reaproveita do cache) e extrai o loader na pasta do jogo. Devolve o nome
-/// do arquivo instalado (com a versão).
+/// Downloads (or reuses from the cache) and extracts the loader into the game folder.
+/// Returns the name of the installed archive (with the version).
 pub fn install(dir: &Path, loader: Loader, il2cpp: bool, mut progress: impl FnMut(u64, u64)) -> Result<String> {
     let (name, url) = pick_download(loader, il2cpp)?;
     let dest_dir = cache_dir();
@@ -148,7 +148,7 @@ pub fn install(dir: &Path, loader: Loader, il2cpp: bool, mut progress: impl FnMu
         fs::rename(&part, &file)?;
     }
     crate::install::extract(&file, dir).with_context(|| tr!("extracting {name} into {}", "extraindo {name} em {}", dir.display()))?;
-    // O BepInEx só cria plugins/ ao abrir o jogo; criar já deixa o app listar e instalar.
+    // BepInEx only creates plugins/ when the game starts; creating it now lets the app list and install.
     if loader == Loader::BepInEx {
         fs::create_dir_all(dir.join("BepInEx/plugins"))?;
     } else {
@@ -162,7 +162,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reconhece_unity() {
+    fn detects_unity() {
         let base = std::env::temp_dir().join(format!("linex-unity-{}", std::process::id()));
         let (mono, il2, old, nat) = (base.join("mono"), base.join("il2"), base.join("old"), base.join("nat"));
         for d in [&mono, &il2, &old.join("Jogo_Data/Managed"), &nat] {
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(unity_kind(&mono), Some(false));
         assert_eq!(unity_kind(&il2), Some(true));
         assert_eq!(unity_kind(&old), Some(false));
-        assert_eq!(unity_kind(&nat), None, "jogo nativo do Linux fica de fora");
+        assert_eq!(unity_kind(&nat), None, "a native Linux game is left out");
         fs::remove_dir_all(base).unwrap();
     }
 }

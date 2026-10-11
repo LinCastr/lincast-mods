@@ -1,9 +1,9 @@
-//! Tema: o padrão (cinza neutro com azul) ou um derivado da paleta do wallust.
+//! Theme: the default (neutral grey with blue) or one derived from the wallust palette.
 //!
-//! A paleta do wallust raramente serve crua para uma interface (no rice do autor ela é
-//! quase toda vermelho-escuro sobre preto). Então só se aproveita o *matiz*: o destaque
-//! vem da cor mais saturada da paleta, com brilho ajustado para ler bem no escuro, e
-//! as superfícies ganham um leve tom desse matiz. O resultado fica sempre legível.
+//! A wallust palette is rarely usable raw for an interface (in the author's rice it is
+//! almost all dark red on black). So only the *hue* is used: the accent comes from the
+//! palette's most saturated color, with lightness adjusted to read well on dark, and
+//! the surfaces get a slight tint of that hue. The result is always readable.
 
 use std::fs;
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ pub struct Palette {
     pub colors: Vec<Rgb>,
 }
 
-/// Onde o wallust (ou o pywal) costuma deixar uma paleta em JSON.
+/// Where wallust (or pywal) usually leaves a palette as JSON.
 pub fn palette_candidates() -> Vec<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
@@ -25,7 +25,7 @@ pub fn palette_candidates() -> Vec<PathBuf> {
     vec![
         cache.join("wallust/colors.json"),
         cache.join("wal/colors.json"),
-        // Modelo do rice hollow-wired.
+        // Template from the hollow-wired rice.
         cache.join("wallust/colors-quickshell.json"),
     ]
 }
@@ -47,7 +47,7 @@ fn parse_hex(s: &str) -> Option<Rgb> {
     Some(Rgb(v(0)?, v(2)?, v(4)?))
 }
 
-/// Aceita o formato plano ({"color0": ...}) e o do pywal ({"colors": {"color0": ...}}).
+/// Accepts the flat format ({"color0": ...}) and pywal's ({"colors": {"color0": ...}}).
 pub fn load_palette(p: &PathBuf) -> Option<Palette> {
     let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(p).ok()?).ok()?;
     let src = v.get("colors").filter(|c| c.is_object()).unwrap_or(&v);
@@ -134,7 +134,7 @@ pub fn default_colors() -> Colors {
     }
 }
 
-/// Cor de destaque: a mais saturada da paleta (ignorando quase-preto e quase-branco).
+/// Accent color: the palette's most saturated one (ignoring near-black and near-white).
 fn pick_accent(p: &Palette) -> Option<(f32, f32)> {
     p.colors
         .iter()
@@ -168,20 +168,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn paleta_escura_do_rice_vira_destaque_legivel() {
-        // Paleta real do rice: vermelhos escuros sobre preto.
+    fn dark_rice_palette_gives_a_readable_accent() {
+        // The rice's real palette: dark reds on black.
         let hexes = ["#000000", "#3A3A3A", "#4B3C3B", "#523C3B", "#523C3B", "#5B3D3B", "#633D3B", "#750804",
                      "#1C1C1C", "#3A3A3A", "#593E3D", "#643E3C", "#643E3C", "#743E3D", "#833F3D", "#750804"];
         let p = Palette { colors: hexes.iter().map(|h| parse_hex(h).unwrap()).collect() };
         let c = wallust_colors(&p);
         let (h, s, l) = to_hsl(c.accent);
-        assert!(!(0.05..0.95).contains(&h), "matiz vermelho, veio {h}");
+        assert!(!(0.05..0.95).contains(&h), "red hue, got {h}");
         assert!(s >= 0.55 && (l - 0.6).abs() < 0.01);
         assert!(to_hsl(c.bg).2 < 0.1 && to_hsl(c.text).2 > 0.85);
     }
 
     #[test]
-    fn ida_e_volta_hsl() {
+    fn hsl_round_trip() {
         let c = Rgb(0.3, 0.55, 1.0);
         let (h, s, l) = to_hsl(c);
         let d = from_hsl(h, s, l);

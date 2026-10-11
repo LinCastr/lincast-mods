@@ -1,5 +1,5 @@
-//! Log em ~/.local/state/linex-mods/linex-mods.log. O processo que o navegador abre
-//! para o link nxm:// não tem janela; sem arquivo, um clique que falhou não deixa rastro.
+//! Log in ~/.local/state/linex-mods/linex-mods.log. The process the browser starts for
+//! an nxm:// link has no window; without a file, a failed click leaves no trace.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -16,7 +16,7 @@ fn path() -> PathBuf {
 pub fn line(msg: &str) {
     let p = path();
     let _ = fs::create_dir_all(p.parent().unwrap());
-    // Não deixa crescer sem limite.
+    // Don't let it grow without bound.
     if fs::metadata(&p).is_ok_and(|m| m.len() > 512 * 1024) {
         let _ = fs::rename(&p, p.with_extension("log.old"));
     }

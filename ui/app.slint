@@ -1,6 +1,6 @@
 import { ScrollView } from "std-widgets.slint";
 
-// Cores da interface. O Rust troca todas de uma vez (tema padrão ou wallust).
+// Interface colors. Rust swaps them all at once (default theme or wallust).
 export global Theme {
     in-out property <color> bg: #121418;
     in-out property <color> sidebar: #0d0f12;
@@ -116,7 +116,7 @@ component Button inherits Rectangle {
     }
 }
 
-// Campo de busca próprio (o LineEdit padrão destoava: linha azul, cantos retos).
+// Own search field (the stock LineEdit stood out: blue line, square corners).
 component SearchBox inherits Rectangle {
     in-out property <string> text;
     callback edited(string);
@@ -168,7 +168,7 @@ component SearchBox inherits Rectangle {
     }
 }
 
-// Escolha entre poucas opções (filtro, tema).
+// Choice among a few options (filter, theme).
 component Segmented inherits Rectangle {
     in property <[string]> options;
     in-out property <int> current;
@@ -379,7 +379,7 @@ component LinkText inherits Text {
     }
 }
 
-// Larguras das colunas da lista (cabeçalho e linhas usam as mesmas).
+// Column widths of the list (header and rows use the same).
 global Cols {
     out property <length> author: 200px;
     out property <length> version: 110px;
@@ -423,13 +423,13 @@ component ModRow inherits Rectangle {
     callback properties();
     property <length> menu-x;
     property <length> menu-y;
-    // Primeiro clique em "Remover" pede confirmação; some sozinho em 3 s.
+    // First click on "Remove" asks for confirmation; it goes away by itself after 3 s.
     property <bool> confirm;
     property <bool> hovered: ta.has-hover || rm.has-hover;
     height: 44px;
     border-radius: Theme.radius;
     background: hovered ? #ffffff06 : transparent;
-    // Clique direito: menu do mod.
+    // Right click: the mod's menu.
     ta := TouchArea {
         pointer-event(e) => {
             if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
@@ -1027,7 +1027,7 @@ export component AppWindow inherits Window {
         }
 
         if root.page == 0: VerticalLayout {
-            // Cabeçalho no estilo da biblioteca do Steam: arte do jogo esmaecendo no fundo.
+            // Header in the style of Steam's library: game art fading into the background.
             Rectangle {
                 height: 210px;
                 clip: true;
@@ -1120,7 +1120,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Barra da lista: busca, filtro e contagem.
+            // List bar: search, filter and count.
             HorizontalLayout {
                 padding-left: 28px;
                 padding-right: 28px;
@@ -1153,7 +1153,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Cabeçalho das colunas.
+            // Column header.
             HorizontalLayout {
                 padding-left: 40px;
                 padding-right: 40px;
@@ -1191,7 +1191,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Lista com a barra de rolagem à esquerda (perto dos nomes, onde o olho já está).
+            // List with the scrollbar on the left (near the names, where the eye already is).
             HorizontalLayout {
                 Rectangle {
                     width: 28px;
@@ -1264,7 +1264,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Propriedades de um mod (clique direito → Propriedades).
+    // Properties of a mod (right click → Properties).
     if root.props-open: Rectangle {
         background: #00000070;
         TouchArea {
@@ -1350,8 +1350,8 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Avisos empilhados no canto superior direito. O Rust tira cada um depois de
-    // 2,5 s; o andamento (progress) fica enquanto durar.
+    // Notices stacked in the top right corner. Rust removes each one after 2.5 s;
+    // the progress one stays while it lasts.
     VerticalLayout {
         x: parent.width - self.width - 20px;
         y: 20px;
@@ -1369,7 +1369,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Histórico de avisos (aberto pelo sino).
+    // Notice history (opened from the bell).
     if root.panel-open: TouchArea {
         clicked => { root.panel-open = false; }
     }

@@ -1,4 +1,4 @@
-//! Quais jogos dá para modar e com qual loader.
+//! Which games can be modded, and with which loader.
 
 use crate::steam::{self, SteamGame};
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ impl Loader {
         }
     }
 
-    /// Pasta (relativa ao jogo) onde ficam os mods ativos.
+    /// Folder (relative to the game) holding the enabled mods.
     pub fn mods_dir(self) -> &'static str {
         match self {
             Loader::MelonLoader => "Mods",
@@ -30,7 +30,7 @@ impl Loader {
         }
     }
 
-    /// DLL que o Proton precisa carregar da pasta do jogo (`WINEDLLOVERRIDES`).
+    /// DLL that Proton must load from the game folder (`WINEDLLOVERRIDES`).
     pub fn proxy_dll(self) -> Option<&'static str> {
         match self {
             Loader::MelonLoader => Some("version"),
@@ -40,7 +40,7 @@ impl Loader {
     }
 }
 
-/// Jogos conhecidos: loader esperado e o "domínio" do jogo no Nexus.
+/// Known games: the expected loader and the game's "domain" on the Nexus.
 struct Known {
     appid: u32,
     loader: Loader,
@@ -56,22 +56,22 @@ const KNOWN: &[Known] = &[
 #[derive(Debug, Clone)]
 pub struct Game {
     pub steam: SteamGame,
-    /// Loader instalado de fato na pasta do jogo.
+    /// Loader actually installed in the game folder.
     pub installed_loader: Option<Loader>,
-    /// Loader que o jogo usa (instalado ou, se conhecido, o esperado).
+    /// Loader the game uses (the installed one or, for a known game, the expected one).
     pub loader: Loader,
     pub nexus: Option<&'static str>,
 }
 
-/// "Slime Rancher 2" → "slimerancher2": é como o Nexus forma o domínio da maioria
-/// dos jogos (stardewvalley, bloonstd6, megabonk...).
+/// "Slime Rancher 2" → "slimerancher2": how the Nexus builds the domain of most
+/// games (stardewvalley, bloonstd6, megabonk...).
 fn as_nexus_domain(name: &str) -> String {
     name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase()
 }
 
 impl Game {
-    /// Este jogo é o do domínio do Nexus? Usa a tabela conhecida e, para o resto,
-    /// o nome do Steam no formato do domínio.
+    /// Is this the game of that Nexus domain? Uses the known table and, for the rest,
+    /// the Steam name in domain form.
     pub fn matches_nexus(&self, domain: &str) -> bool {
         let d = domain.to_lowercase();
         self.nexus.map(|n| n == d).unwrap_or(false) || as_nexus_domain(&self.steam.name) == d
@@ -90,7 +90,7 @@ impl Game {
         self.dir().join(self.loader.mods_dir())
     }
 
-    /// Onde ficam os mods desligados (fora da vista do loader, nunca apagados).
+    /// Where disabled mods live (out of the loader's sight, never deleted).
     pub fn disabled_dir(&self) -> PathBuf {
         self.dir().join(".linex-disabled").join(self.loader.mods_dir())
     }
@@ -120,7 +120,7 @@ fn from_steam(s: SteamGame) -> Option<Game> {
     })
 }
 
-/// Jogos instalados que têm loader ou que o app sabe modar.
+/// Installed games that have a loader or that the app knows how to mod.
 pub fn moddable_games() -> Vec<Game> {
     steam::installed_games().into_iter().filter_map(from_steam).collect()
 }
@@ -139,7 +139,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dominio_pelo_nome() {
+    fn domain_from_name() {
         assert_eq!(as_nexus_domain("Slime Rancher 2"), "slimerancher2");
         assert_eq!(as_nexus_domain("Megabonk"), "megabonk");
         assert_eq!(as_nexus_domain("Bloons TD 6"), "bloonstd6");

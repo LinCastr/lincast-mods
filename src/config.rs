@@ -1,4 +1,4 @@
-//! Preferências do app em ~/.config/linex-mods/config.json.
+//! App preferences in ~/.config/linex-mods/config.json.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// "default" ou "wallust".
+    /// "default" or "wallust".
     #[serde(default)]
     pub theme: String,
-    /// AppID do último jogo aberto.
+    /// AppID of the last game opened.
     #[serde(default)]
     pub last_game: Option<u32>,
     /// Interface language: "auto" (empty), "en" or "pt".

@@ -1,4 +1,4 @@
-//! Instala um mod a partir de um arquivo (.zip nativo; .7z/.rar pelo 7z ou bsdtar).
+//! Installs a mod from an archive (.zip natively; .7z/.rar through 7z or bsdtar).
 
 use crate::games::{Game, Loader};
 use crate::records::{self, NexusSource, Record};
@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Pasta temporária apagada ao sair do escopo.
+/// Temporary folder removed when it goes out of scope.
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -35,7 +35,7 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
     let mut zip = zip::ZipArchive::new(file).context(tr!("the file is not a valid .zip", "o arquivo não é um .zip válido"))?;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
-        // enclosed_name recusa caminhos que saem da pasta (../, absolutos).
+        // enclosed_name rejects paths that leave the folder (../, absolute).
         let Some(rel) = entry.enclosed_name() else { continue };
         let out = dest.join(rel);
         if entry.is_dir() {
@@ -129,8 +129,8 @@ fn is_doc(name: &str) -> bool {
     n.ends_with(".md") || n.ends_with(".txt") || n.ends_with(".url") || n == "license" || n == "readme"
 }
 
-/// SMAPI: cada pasta com manifest.json é um mod. Se vários mods dividem uma pasta-mãe
-/// (ex.: "Ridgeside Village/[CP] ..., [CC] ..."), instala a pasta-mãe inteira.
+/// SMAPI: each folder with a manifest.json is a mod. If several mods share a parent
+/// folder (e.g. "Ridgeside Village/[CP] ..., [CC] ..."), installs the whole parent.
 fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     let mut files = Vec::new();
     walk(root, &mut files);
@@ -142,7 +142,7 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     if mdirs.is_empty() {
         bail!("{}", tr!("no manifest.json found: this doesn't look like a SMAPI mod", "não achei manifest.json: isto não parece um mod do SMAPI"));
     }
-    // Só as pastas de topo (mod dentro de mod é parte do de fora).
+    // Only the top folders (a mod inside a mod is part of the outer one).
     mdirs.sort();
     let mut tops: Vec<PathBuf> = Vec::new();
     for d in mdirs {
@@ -150,7 +150,7 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
             tops.push(d);
         }
     }
-    // Ancestral comum.
+    // Common ancestor.
     let mut common = tops[0].clone();
     for t in &tops[1..] {
         while !t.starts_with(&common) {
@@ -159,7 +159,7 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     }
     let units: Vec<(PathBuf, String)> = if common == root {
         if tops.len() == 1 {
-            // manifest.json na raiz do arquivo: a pasta leva o nome do arquivo.
+            // manifest.json at the archive root: the folder takes the archive's name.
             vec![(root.to_path_buf(), stem.to_string())]
         } else {
             tops.iter().map(|t| (t.clone(), name_of(t))).collect()
@@ -183,8 +183,8 @@ fn name_of(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
 }
 
-/// Troca a pasta do mod pela nova, mantendo os config.json que o usuário já tinha.
-/// Se o mod estava desligado, a versão nova continua desligada.
+/// Replaces the mod folder with the new one, keeping the user's config.json files.
+/// If the mod was disabled, the new version stays disabled.
 fn replace_dir(src: &Path, enabled_dst: &Path, disabled_dst: &Path) -> Result<()> {
     let dst = if disabled_dst.exists() && !enabled_dst.exists() { disabled_dst } else { enabled_dst };
     let mut saved = Vec::new();
@@ -210,8 +210,8 @@ fn replace_dir(src: &Path, enabled_dst: &Path, disabled_dst: &Path) -> Result<()
     Ok(())
 }
 
-/// MelonLoader/BepInEx: pastas com nome conhecido vão para o lugar delas; DLL solta
-/// vai para a pasta de mods.
+/// MelonLoader/BepInEx: folders with a known name go to their place; a loose DLL goes
+/// to the mods folder.
 fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     let mut files = Vec::new();
     walk(root, &mut files);
@@ -222,7 +222,7 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     };
     let mut placed: Vec<(PathBuf, PathBuf)> = Vec::new();
     let mut loose: Vec<PathBuf> = Vec::new();
-    // Pasta própria de um mod de BepInEx solto: vira uma unidade só no registro.
+    // Own folder for a loose BepInEx mod: a single unit in the record.
     let mut unit_dir: Option<PathBuf> = None;
     for f in &files {
         let rel = f.strip_prefix(root).unwrap();
@@ -252,7 +252,7 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
             }
         }
         _ => {
-            // Mod de BepInEx solto: tudo numa pasta própria em plugins/.
+            // Loose BepInEx mod: everything in its own folder under plugins/.
             if !loose_dlls.is_empty() {
                 unit_dir = Some(game.mods_dir().join(stem));
                 for f in &loose {
@@ -274,7 +274,7 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
         names.push(rel(u));
     }
     for (src, dst) in placed {
-        // DLL que estava desligada: a versão nova substitui e continua desligada.
+        // DLL that was disabled: the new version replaces it and stays disabled.
         let disabled = game.dir().join(".linex-disabled").join(rel(&dst));
         let target = if disabled.is_file() && !dst.exists() { disabled } else { dst.clone() };
         copy_tree(&src, &target)?;
@@ -285,9 +285,9 @@ fn install_unity(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Para qual loader as DLLs do arquivo foram feitas. Uma DLL .NET guarda os nomes
-/// dos assemblies que usa em texto puro, então basta procurar os nomes: mod de
-/// MelonLoader cita "MelonLoader", de BepInEx cita "BepInEx". Ambíguo = None.
+/// Which loader the archive's DLLs were built for. A .NET DLL keeps the names of the
+/// assemblies it uses in plain text, so searching for the names is enough: a
+/// MelonLoader mod mentions "MelonLoader", a BepInEx one "BepInEx". Ambiguous = None.
 fn dll_loader(root: &Path) -> Option<Loader> {
     let mut files = Vec::new();
     walk(root, &mut files);
@@ -308,8 +308,8 @@ fn dll_loader(root: &Path) -> Option<Loader> {
     }
 }
 
-/// Nome "limpo" do arquivo: tira a extensão e o sufixo de IDs do Nexus
-/// ("Mod Legal-123-1-0-1700000000" → "Mod Legal").
+/// "Clean" archive name: drops the extension and the Nexus ID suffix
+/// ("Cool Mod-123-1-0-1700000000" → "Cool Mod").
 pub fn clean_stem(archive: &Path) -> String {
     let stem = archive.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let parts: Vec<&str> = stem.split('-').collect();
@@ -321,8 +321,8 @@ pub fn clean_stem(archive: &Path) -> String {
     if s.is_empty() { stem } else { s }
 }
 
-/// Instala e registra. `name` e `nexus` vêm do download pelo Nexus; para arquivo
-/// local o nome sai do próprio arquivo.
+/// Installs and records. `name` and `nexus` come from a Nexus download; for a local
+/// archive the name comes from the file itself.
 pub fn install_archive(
     game: &Game,
     archive: &Path,
@@ -364,7 +364,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn limpa_nome_do_nexus() {
+    fn cleans_nexus_name() {
         assert_eq!(clean_stem(Path::new("Continuous Sprint-7-1-0-1665850896.zip")), "Continuous Sprint");
         assert_eq!(clean_stem(Path::new("Rancher's Titles Version 1.0.0-155-1-0-0-1778287552.zip")), "Rancher's Titles Version 1.0.0");
         assert_eq!(clean_stem(Path::new("SimpleMod.zip")), "SimpleMod");

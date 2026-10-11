@@ -1,4 +1,4 @@
-//! Nexus Mods: links nxm://, chave da API e download.
+//! Nexus Mods: nxm:// links, API key and download.
 
 use crate::records::NexusSource;
 use anyhow::{Context, Result, anyhow, bail};
@@ -11,8 +11,8 @@ const KEYRING_SERVICE: &str = "linex-mods";
 const KEYRING_USER: &str = "nexus-api-key";
 pub const API_KEYS_PAGE: &str = "https://www.nexusmods.com/settings/api-keys";
 
-/// `nxm://<domínio>/mods/<mod>/files/<arquivo>?key=..&expires=..`. Conta gratuita só
-/// baixa com a chave de uso único que vem no link ("Mod Manager Download").
+/// `nxm://<domain>/mods/<mod>/files/<file>?key=..&expires=..`. A free account can only
+/// download with the one-time key in the link ("Mod Manager Download").
 #[derive(Debug, Clone)]
 pub struct NxmLink {
     pub domain: String,
@@ -53,13 +53,13 @@ impl NxmLink {
         })
     }
 
-    /// Versão sem a chave de uso único, para log.
+    /// Version without the one-time key, for the log.
     pub fn redacted(&self) -> String {
         format!("nxm://{}/mods/{}/files/{}", self.domain, self.mod_id, self.file_id)
     }
 }
 
-// ---- chave da API -----------------------------------------------------------
+// ---- API key ----------------------------------------------------------------
 
 fn key_file() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
@@ -73,7 +73,7 @@ fn entry() -> Option<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
 }
 
-/// Chave salva: primeiro o chaveiro do sistema, depois o arquivo de reserva.
+/// Saved key: first the system keyring, then the fallback file.
 pub fn load_key() -> Option<String> {
     if let Some(k) = entry().and_then(|e| e.get_password().ok()) {
         return Some(k);
@@ -81,8 +81,8 @@ pub fn load_key() -> Option<String> {
     fs::read_to_string(key_file()).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-/// Salva no chaveiro (Secret Service: KWallet, GNOME Keyring...). Sem chaveiro
-/// funcionando, cai num arquivo legível só pelo usuário. Devolve onde ficou.
+/// Saves to the keyring (Secret Service: KWallet, GNOME Keyring...). Without a working
+/// keyring, falls back to a file only the user can read. Returns where it went.
 pub fn save_key(key: &str) -> Result<String> {
     let key = key.trim();
     if let Some(e) = entry()
@@ -139,7 +139,7 @@ fn get_json(path_and_query: &str, key: &str) -> Result<serde_json::Value> {
     }
 }
 
-/// Valida a chave: devolve o nome do usuário e se é premium.
+/// Validates the key: returns the user name and whether it is premium.
 pub fn validate(key: &str) -> Result<(String, bool)> {
     let v = get_json("/users/validate.json", key)?;
     let name = v["name"].as_str().unwrap_or("?").to_string();
@@ -158,8 +158,8 @@ pub fn mod_page(domain: &str, mod_id: u64) -> String {
     format!("https://www.nexusmods.com/{domain}/mods/{mod_id}?tab=files")
 }
 
-/// `remota` é mais nova que `local`? Compara número a número ("1.10" > "1.9");
-/// se não der para comparar assim, qualquer diferença conta.
+/// Is `remote` newer than `local`? Compares number by number ("1.10" > "1.9");
+/// when that isn't possible, any difference counts.
 pub fn is_newer(remote: &str, local: &str) -> bool {
     let norm = |s: &str| s.trim().trim_start_matches(['v', 'V']).to_string();
     let (r, l) = (norm(remote), norm(local));
@@ -193,7 +193,7 @@ fn downloads_dir() -> PathBuf {
         .join("linex-mods/downloads")
 }
 
-/// Baixa o arquivo do link. `progress(baixado, total)`; total 0 = desconhecido.
+/// Downloads the link's file. `progress(done, total)`; total 0 = unknown.
 pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -> Result<Downloaded> {
     let (d, m, f) = (&link.domain, link.mod_id, link.file_id);
     let mod_info = get_json(&format!("/games/{d}/mods/{m}.json"), key)?;
@@ -210,7 +210,7 @@ pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -
         .ok_or_else(|| anyhow!("{}", tr!("the Nexus returned no download link", "o Nexus não devolveu link de download")))?
         .to_string();
 
-    // Só o nome do arquivo, nunca um caminho vindo de fora.
+    // Only the file name, never a path from outside.
     let file_name = file_info["file_name"]
         .as_str()
         .and_then(|n| std::path::Path::new(n).file_name())
@@ -257,7 +257,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn compara_versoes() {
+    fn compares_versions() {
         assert!(is_newer("1.10", "1.9"));
         assert!(is_newer("v2.0.1", "2.0"));
         assert!(!is_newer("1.0.0", "1.0"));
@@ -266,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn le_link_nxm() {
+    fn parses_nxm_link() {
         let l = NxmLink::parse("nxm://SlimeRancher2/mods/191/files/1234?key=abc&expires=999&user_id=5").unwrap();
         assert_eq!(l.domain, "slimerancher2");
         assert_eq!((l.mod_id, l.file_id), (191, 1234));
