@@ -1,7 +1,7 @@
 //! Janela principal.
 
 use crate::games::{self, Game};
-use crate::{config, desktop, install, ipc, log, mods, nexus, steam, theme};
+use crate::{config, desktop, install, ipc, loaders, log, mods, nexus, steam, theme};
 use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -146,6 +146,7 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     ui.set_game_status(status.into());
     ui.set_game_warning(warn);
     ui.set_game_fix(fix.into());
+    ui.set_game_missing_loader(if g.installed_loader.is_none() { g.loader.label().into() } else { SharedString::new() });
     let appid = g.steam.appid;
     ui.set_hero(load_image(steam::art(appid, "library_hero.jpg").or_else(|| steam::art(appid, "library_hero_blur.jpg"))));
     ui.set_logo(load_image(steam::art(g.steam.appid, "logo.png")));
@@ -459,9 +460,16 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             select(ui, &mut state.borrow_mut(), i);
         }
     }
-    if std::env::var("LINEX_PAGE").as_deref() == Ok("1") {
-        ui.set_page(1);
-        ui.invoke_show_settings();
+    match std::env::var("LINEX_PAGE").as_deref() {
+        Ok("1") => {
+            ui.set_page(1);
+            ui.invoke_show_settings();
+        }
+        Ok("2") => {
+            ui.set_page(2);
+            ui.invoke_show_add_game();
+        }
+        _ => {}
     }
     if let Ok(m) = std::env::var("LINEX_MESSAGE") {
         for (i, part) in m.split('|').enumerate() {
@@ -570,6 +578,64 @@ fn install_files(ui: &AppWindow, state: &State, files: Vec<PathBuf>) {
     });
 }
 
+fn unity_items() -> Vec<UnityItem> {
+    loaders::unity_games_without_loader()
+        .into_iter()
+        .map(|u| UnityItem {
+            appid: u.steam.appid as i32,
+            name: u.steam.name.clone().into(),
+            kind: if u.il2cpp { "Unity · IL2CPP".into() } else { "Unity · Mono".into() },
+            icon: load_image(steam::icon(u.steam.appid)),
+        })
+        .collect()
+}
+
+fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
+    let loader = match which.to_lowercase().as_str() {
+        "melonloader" => games::Loader::MelonLoader,
+        "bepinex" => games::Loader::BepInEx,
+        "smapi" => {
+            open("https://smapi.io");
+            return set_msg(ui, "O SMAPI tem instalador próprio: a página dele abriu no navegador.", false);
+        }
+        _ => return,
+    };
+    let dir = state
+        .games
+        .iter()
+        .find(|g| g.steam.appid as i32 == appid)
+        .map(|g| g.steam.dir.clone())
+        .or_else(|| steam::installed_games().into_iter().find(|g| g.appid as i32 == appid).map(|g| g.dir));
+    let Some(dir) = dir else { return };
+    let Some(il2cpp) = loaders::unity_kind(&dir) else {
+        return set_msg(ui, "Este jogo não parece ser um jogo Unity de Windows: o loader não serve para ele.", true);
+    };
+    ui.set_installing(appid);
+    set_progress(ui, format!("Baixando o {}…", loader.label()));
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let mut last = u64::MAX;
+        let w2 = weak.clone();
+        let label = loader.label();
+        let r = loaders::install(&dir, loader, il2cpp, |done, total| {
+            let step = if total > 0 { done * 100 / total } else { done / (1024 * 1024) };
+            if step != last {
+                last = step;
+                let txt = if total > 0 { format!("Baixando o {label}… {step}%") } else { format!("Baixando o {label}… {step} MB") };
+                let _ = w2.upgrade_in_event_loop(move |ui| set_progress(&ui, txt));
+            }
+        });
+        let (msg, err) = match r {
+            Ok(file) => {
+                log::line(&format!("loader instalado: {file} em {}", dir.display()));
+                (format!("{label} instalado. Abra o jogo uma vez para ele terminar de se configurar."), false)
+            }
+            Err(e) => (format!("Não deu para instalar o {label}: {e:#}"), true),
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_loader_finished(appid, msg.into(), err));
+    });
+}
+
 pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     desktop::refresh_desktop_file();
     let ui = AppWindow::new()?;
@@ -612,6 +678,43 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     });
     ui.on_dismiss_toast(remove_toast);
+    {
+        let weak = ui.as_weak();
+        ui.on_show_add_game(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_unity_games(ModelRc::new(VecModel::from(unity_items())));
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_install_loader(move |appid, which| {
+            if let Some(ui) = weak.upgrade() {
+                install_loader(&ui, &state.borrow(), appid, &which);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_loader_finished(move |appid, msg, err| {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.set_installing(-1);
+            set_msg(&ui, msg, err);
+            if err {
+                return;
+            }
+            // O jogo passa a ter loader: entra (ou se atualiza) na lista e abre.
+            let mut st = state.borrow_mut();
+            st.games = games::moddable_games();
+            ui.set_games(ModelRc::new(VecModel::from(game_items(&st.games))));
+            ui.set_unity_games(ModelRc::new(VecModel::from(unity_items())));
+            if let Some(i) = st.games.iter().position(|g| g.steam.appid as i32 == appid) {
+                ui.set_page(0);
+                ui.set_current(i as i32);
+                select(&ui, &mut st, i);
+            }
+        });
+    }
     {
         use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
         let (weak, state) = (ui.as_weak(), state.clone());

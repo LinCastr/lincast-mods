@@ -4,6 +4,7 @@ mod games;
 mod gui;
 mod install;
 mod ipc;
+mod loaders;
 mod log;
 mod mods;
 mod nexus;
@@ -22,6 +23,8 @@ const USAGE: &str = "uso:
   linex-mods ligar <jogo> <mod>
   linex-mods desligar <jogo> <mod>
   linex-mods remover <jogo> <mod>
+  linex-mods unity
+  linex-mods loader <jogo> melonloader|bepinex
 
 <jogo> é o AppID do Steam ou parte do nome.";
 
@@ -66,6 +69,26 @@ fn run(args: &[String]) -> Result<()> {
         ["ligar", q, id] => mods::set_enabled(&game(q)?, id, true)?,
         ["desligar", q, id] => mods::set_enabled(&game(q)?, id, false)?,
         ["remover", q, id] => println!("{} foi para a Lixeira", mods::uninstall(&game(q)?, id)?),
+        ["unity"] => {
+            for u in loaders::unity_games_without_loader() {
+                println!("{:>8}  {}  [{}]", u.steam.appid, u.steam.name, if u.il2cpp { "IL2CPP" } else { "Mono" });
+            }
+        }
+        ["loader", q, which] => {
+            let q = q.to_lowercase();
+            let g = steam::installed_games()
+                .into_iter()
+                .find(|g| g.appid.to_string() == q || g.name.to_lowercase().contains(&q))
+                .with_context(|| format!("jogo não encontrado: {q}"))?;
+            let il2cpp = loaders::unity_kind(&g.dir).context("não é um jogo Unity de Windows")?;
+            let loader = match which.to_lowercase().as_str() {
+                "melonloader" => games::Loader::MelonLoader,
+                "bepinex" => games::Loader::BepInEx,
+                _ => bail!("loader: melonloader ou bepinex"),
+            };
+            let file = loaders::install(&g.dir, loader, il2cpp, |_, _| {})?;
+            println!("{file} instalado em {}", g.dir.display());
+        }
         _ => bail!("{USAGE}"),
     }
     Ok(())

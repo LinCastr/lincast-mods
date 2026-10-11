@@ -25,6 +25,13 @@ export struct GameItem {
     icon: image,
 }
 
+export struct UnityItem {
+    appid: int,
+    name: string,
+    kind: string,
+    icon: image,
+}
+
 export struct Notice {
     id: int,
     text: string,
@@ -628,6 +635,105 @@ component SettingsPage inherits VerticalLayout {
     }
 }
 
+component AddGamePage inherits VerticalLayout {
+    in property <[UnityItem]> games;
+    in property <int> installing: -1;
+    callback install(int, string);
+    padding: 36px;
+    padding-top: 32px;
+    spacing: 8px;
+
+    Text {
+        text: "Adicionar jogo";
+        color: Theme.text;
+        font-size: 22px;
+        font-weight: 700;
+    }
+    Text {
+        text: "Jogos Unity do Steam que ainda não têm loader de mods. Escolha o que os mods do jogo pedem: a página de cada mod diz se é MelonLoader ou BepInEx.";
+        color: Theme.dim;
+        font-size: 12px;
+        wrap: word-wrap;
+    }
+    Rectangle { height: 12px; }
+    if root.games.length == 0: Text {
+        text: "Nenhum jogo Unity sem loader encontrado.";
+        color: Theme.faint;
+        font-size: 13px;
+    }
+    ScrollView {
+        VerticalLayout {
+            spacing: 2px;
+            for g in root.games: Rectangle {
+                height: 52px;
+                border-radius: Theme.radius;
+                background: ta.has-hover ? #ffffff06 : transparent;
+                ta := TouchArea { }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 12px;
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 5px;
+                        clip: true;
+                        background: Theme.line;
+                        Image {
+                            source: g.icon;
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: cover;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 1px;
+                        Text {
+                            text: g.name;
+                            color: Theme.text;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: g.kind;
+                            color: Theme.faint;
+                            font-size: 11px;
+                        }
+                    }
+                    if root.installing == g.appid: Text {
+                        text: "Instalando…";
+                        color: Theme.dim;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                    if root.installing != g.appid: HorizontalLayout {
+                        spacing: 8px;
+                        alignment: end;
+                        VerticalLayout {
+                            alignment: center;
+                            Button {
+                                text: "MelonLoader";
+                                enabled: root.installing < 0;
+                                clicked => { root.install(g.appid, "melonloader"); }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Button {
+                                text: "BepInEx";
+                                enabled: root.installing < 0;
+                                clicked => { root.install(g.appid, "bepinex"); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "linex-mods";
     preferred-width: 1180px;
@@ -644,6 +750,9 @@ export component AppWindow inherits Window {
     in property <string> game-status;
     in property <bool> game-warning;
     in property <string> game-fix;
+    in property <string> game-missing-loader;
+    in property <[UnityItem]> unity-games;
+    in property <int> installing: -1;
     in property <string> counts;
     in property <image> hero;
     in property <image> logo;
@@ -673,6 +782,9 @@ export component AppWindow inherits Window {
     callback play();
     callback open-folder();
     callback copy-fix();
+    callback show-add-game();
+    callback install-loader(int, string);
+    callback loader-finished(int, string, bool);
     callback open-url(string);
     callback updates-found(int, string);
     callback filter-changed(string);
@@ -739,6 +851,15 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { }
                 SideLink {
+                    text: "Adicionar jogo";
+                    icon: @image-url("icons/plus.svg");
+                    selected: root.page == 2;
+                    clicked => {
+                        root.page = 2;
+                        root.show-add-game();
+                    }
+                }
+                SideLink {
                     text: "Configurações";
                     icon: @image-url("icons/gear.svg");
                     selected: root.page == 1;
@@ -766,6 +887,12 @@ export component AppWindow inherits Window {
                 theme-changed(i) => { root.theme-changed(i); }
             }
             Rectangle { }
+        }
+
+        if root.page == 2: AddGamePage {
+            games: root.unity-games;
+            installing: root.installing;
+            install(id, l) => { root.install-loader(id, l); }
         }
 
         if root.page == 0: VerticalLayout {
@@ -833,6 +960,13 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: 8px;
                             alignment: end;
+                            if root.game-missing-loader != "": Button {
+                                text: root.installing >= 0 ? "Instalando…" : "Instalar " + root.game-missing-loader;
+                                enabled: root.installing < 0;
+                                clicked => {
+                                    root.install-loader(root.games[root.current].appid, root.game-missing-loader);
+                                }
+                            }
                             Button {
                                 text: "Abrir pasta";
                                 icon: @image-url("icons/folder.svg");
