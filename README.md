@@ -35,6 +35,9 @@ It is a small native app (Rust + Slint): about 30 MB of RAM, no browser engine i
   included).
 - Turn mods on and off without deleting them; remove sends everything the mod installed to
   the trash, keeping shared libraries other mods still use.
+- **Thunderstore** packages from the command line, with their dependencies, in r2modman's
+  folder layout (`linex-mods ts install <game> Owner-Name`). A package zip downloaded by hand
+  from thunderstore.io can also be dropped on the window.
 - Reinstalling a SMAPI mod keeps its `config.json`.
 - Right-click a mod: enable/disable, show in folder, open its page, properties, remove.
 
@@ -103,13 +106,16 @@ linex-mods enable|disable|remove <game> <mod>
 linex-mods unity                list Unity games without a loader
 linex-mods loader <game> melonloader|bepinex
 linex-mods updates <game>       check Nexus mods for new versions
+linex-mods ts install <game> <package>
+                                Thunderstore package + dependencies
+                                (Owner-Name[-1.2.3], a thunderstore.io page or ror2mm:// link)
 ```
 
 `<game>` is the Steam AppID or part of the name.
 
 ## Roadmap
 
-- Thunderstore downloads (r2modman-style).
+- Thunderstore in the window: search and the "Install with Mod Manager" button.
 - Nexus collections.
 - Heroic and Lutris games.
 

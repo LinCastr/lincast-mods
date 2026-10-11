@@ -258,3 +258,46 @@ fn help_and_missing_steam() {
     let (ok, text) = h.run(&["frobnicate"]);
     assert!(!ok && text.contains("unknown command"), "{text}");
 }
+
+#[test]
+fn thunderstore_package_uses_the_r2modman_layout() {
+    let h = Home::new("thunderstore");
+    let game = h.game(3527290, "PEAK", &["BepInEx/core/", "BepInEx/plugins/", "PEAK.exe", "UnityPlayer.dll"]);
+    fs::create_dir_all(game.join("BepInEx/config")).unwrap();
+    fs::write(game.join("BepInEx/config/mine.cfg"), "user").unwrap();
+    let manifest = r#"{"name":"Cool_Mod","version_number":"1.2.0","dependencies":["BepInEx-BepInExPack-5.4.2100"]}"#;
+    let zip = h.zip(
+        "Owner-Cool_Mod-1.2.0.zip",
+        &[
+            ("manifest.json", manifest),
+            ("icon.png", ""),
+            ("README.md", "docs"),
+            ("plugins/Cool.dll", "BepInEx"),
+            ("patchers/CoolPatch.dll", "BepInEx"),
+            ("core/CoolCore.dll", "BepInEx"),
+            ("config/mine.cfg", "package default"),
+            ("config/cool.cfg", "package default"),
+        ],
+    );
+    h.ok(&["install", "peak", zip.to_str().unwrap()]);
+    let unit = game.join("BepInEx/plugins/Owner-Cool_Mod");
+    assert!(unit.join("Cool.dll").is_file() && unit.join("manifest.json").is_file());
+    assert!(!unit.join("README.md").exists());
+    assert!(game.join("BepInEx/patchers/Owner-Cool_Mod/CoolPatch.dll").is_file());
+    assert!(game.join("BepInEx/core/Owner-Cool_Mod/CoolCore.dll").is_file());
+    assert_eq!(fs::read_to_string(game.join("BepInEx/config/mine.cfg")).unwrap(), "user", "the user's config was overwritten");
+    assert!(game.join("BepInEx/config/cool.cfg").is_file());
+    assert!(h.ok(&["mods", "peak"]).contains("on   Cool Mod 1.2.0 — Owner"));
+
+    h.ok(&["disable", "peak", "Owner-Cool_Mod"]);
+    for sub in ["plugins", "patchers", "core"] {
+        assert!(!game.join(format!("BepInEx/{sub}/Owner-Cool_Mod")).exists(), "{sub} still active");
+    }
+    h.ok(&["enable", "peak", "Owner-Cool_Mod"]);
+    assert!(game.join("BepInEx/patchers/Owner-Cool_Mod/CoolPatch.dll").is_file());
+
+    h.ok(&["remove", "peak", "Owner-Cool_Mod"]);
+    for sub in ["plugins", "patchers", "core"] {
+        assert!(!game.join(format!("BepInEx/{sub}/Owner-Cool_Mod")).exists(), "{sub} left behind");
+    }
+}

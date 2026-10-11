@@ -352,6 +352,25 @@ pub fn install_archive(
     if !is_plain_name(&stem) {
         bail!("{}", tr!("invalid archive name: {}", "nome de arquivo inválido: {}", archive.display()));
     }
+    // A Thunderstore package downloaded by hand ("Owner-Name-1.0.0.zip", manifest.json with
+    // version_number at the root) goes in r2modman's layout, like `ts install`.
+    let ts_manifest = fs::read_to_string(tmp.0.join("manifest.json"))
+        .ok()
+        .and_then(|s| crate::mods::lenient_json(&s))
+        .filter(|m| m.get("version_number").is_some() && m.get("dependencies").is_some());
+    if game.loader == Loader::BepInEx
+        && nexus.is_none()
+        && let Some(m) = ts_manifest
+    {
+        let file_stem = archive.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let pkg_name = crate::mods::json_field(&m, "name").unwrap_or_else(|| stem.clone());
+        let folder = match crate::thunderstore::PackageRef::parse(&file_stem) {
+            Ok(r) if r.name.eq_ignore_ascii_case(&pkg_name) => r.full_name(),
+            _ => pkg_name.clone(),
+        };
+        drop(tmp);
+        return install_thunderstore(game, archive, &folder, &name.unwrap_or_else(|| pkg_name.replace('_', " ")));
+    }
     let warning = dll_loader(&tmp.0).filter(|l| *l != game.loader).map(|l| {
         tr!(
             "this mod was made for {}, but the game uses {}: it won't load. Look for the {} version on the mod page.",
@@ -370,6 +389,89 @@ pub fn install_archive(
         files,
         archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
         nexus,
+        installed_at: records::now(),
+        warning,
+    };
+    let mut recs = records::load(game.steam.appid);
+    recs.put(rec.clone());
+    records::save(game.steam.appid, &recs)?;
+    Ok(rec)
+}
+
+/// Thunderstore package into a BepInEx game, in r2modman's layout: the package goes to
+/// `BepInEx/plugins/<folder>/` (with its manifest.json and icon.png, which the mod list
+/// reads); `patchers/`, `core/` and `monomod/` go to `BepInEx/<that>/<folder>/` (r2modman's
+/// install rules), and `config/` files are copied only when missing (the user's settings).
+pub fn install_thunderstore(game: &Game, archive: &Path, folder: &str, name: &str) -> Result<Record> {
+    if game.loader != Loader::BepInEx {
+        // MelonLoader packages use the game's own folders (Mods/, UserLibs/): the
+        // normal install already places them.
+        return install_archive(game, archive, Some(name.to_string()), None);
+    }
+    if !is_plain_name(folder) {
+        bail!("{}", tr!("invalid package name: {folder}", "nome de pacote inválido: {folder}"));
+    }
+    let tmp = TempDir::new()?;
+    const SUBDIRS: [&str; 4] = ["plugins", "patchers", "core", "monomod"];
+    let (src, stage) = (tmp.0.join("src"), tmp.0.join("stage"));
+    extract(archive, &src)?;
+    let warning = dll_loader(&src).filter(|l| *l != game.loader).map(|l| {
+        tr!(
+            "this mod was made for {}, but the game uses {}: it won't load.",
+            "este mod foi feito para {}, mas o jogo usa {}: ele não vai carregar.",
+            l.label(),
+            game.loader.label()
+        )
+    });
+    let dir = game.dir();
+    let mut files = Vec::new();
+    walk(&src, &mut files);
+    let mut configs = Vec::new();
+    for f in &files {
+        let rel = f.strip_prefix(&src).unwrap_or(f);
+        let mut comps: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+        if comps.len() > 1 && comps[0].eq_ignore_ascii_case("BepInEx") {
+            comps.remove(0);
+        }
+        let first = comps[0].to_lowercase();
+        let rest = |n: usize| comps[n..].iter().collect::<PathBuf>();
+        let dst = match first.as_str() {
+            _ if comps.len() == 1 && is_doc(&comps[0]) => continue,
+            "config" if comps.len() > 1 => {
+                configs.push((f.clone(), PathBuf::from("BepInEx/config").join(rest(1))));
+                continue;
+            }
+            sub if comps.len() > 1 && SUBDIRS.contains(&sub) => stage.join(sub).join(rest(1)),
+            _ => stage.join("plugins").join(rest(0)),
+        };
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(f, &dst)?;
+    }
+    let mut placed = Vec::new();
+    for sub in SUBDIRS {
+        let staged = stage.join(sub);
+        if staged.is_dir() {
+            let unit = format!("BepInEx/{sub}/{folder}");
+            replace_dir(&staged, &dir.join(&unit), &dir.join(".linex-disabled").join(&unit))?;
+            placed.push(unit);
+        }
+    }
+    for (src, rel) in configs {
+        let dst = dir.join(&rel);
+        if !dst.exists() {
+            copy_tree(&src, &dst)?;
+        }
+    }
+    if placed.is_empty() {
+        bail!("{}", tr!("the package has nothing to install", "o pacote não tem nada para instalar"));
+    }
+    let rec = Record {
+        name: name.to_string(),
+        files: placed,
+        archive: archive.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+        nexus: None,
         installed_at: records::now(),
         warning,
     };

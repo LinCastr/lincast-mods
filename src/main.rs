@@ -15,6 +15,7 @@ mod nexus;
 mod records;
 mod steam;
 mod theme;
+mod thunderstore;
 mod vdf;
 
 use anyhow::{Context, Result, bail};
@@ -31,6 +32,9 @@ const USAGE: &str = "usage:
   linex-mods unity                list Unity games without a loader
   linex-mods loader <game> melonloader|bepinex
   linex-mods updates <game>       check the game's Nexus mods for new versions
+  linex-mods ts install <game> <package>
+                                  install a Thunderstore package and its dependencies
+                                  (Owner-Name[-1.2.3], a thunderstore.io page or ror2mm:// link)
 
 <game> is the Steam AppID or part of the name.";
 
@@ -130,6 +134,23 @@ fn run(args: &[String]) -> Result<()> {
             println!("{file} installed in {}", g.dir.display());
         }
         ("updates", [q]) => updates(&game(q)?)?,
+        ("ts" | "thunderstore", ["install", q, pkg]) => {
+            let g = game(q)?;
+            let r = thunderstore::PackageRef::parse(pkg)?;
+            let recs = thunderstore::install(&g, &r, |step| println!("{}", tr!("installing {step}…", "instalando {step}…")))?;
+            if recs.is_empty() {
+                println!("{}", tr!("Nothing to install: only loader packs.", "Nada para instalar: só pacotes do loader."));
+            }
+            for rec in recs {
+                println!("{}:", rec.name);
+                for n in rec.files {
+                    println!("  → {n}");
+                }
+                if let Some(w) = rec.warning {
+                    println!("  warning: {w}");
+                }
+            }
+        }
         _ => bail!("{}\n\n{USAGE}", tr!("unknown command or wrong arguments", "comando desconhecido ou argumentos errados")),
     }
     Ok(())

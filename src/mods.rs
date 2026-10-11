@@ -306,7 +306,23 @@ pub fn set_enabled(game: &Game, id: &str, enable: bool) -> Result<()> {
         bail!("{}", tr!("there is already a mod named {id} in {}", "já existe um mod com o nome {id} em {}", to.display()));
     }
     fs::create_dir_all(&to).with_context(|| tr!("creating {}", "criando {}", to.display()))?;
-    fs::rename(&src, &dst).with_context(|| tr!("moving {} to {}", "movendo {} para {}", src.display(), dst.display()))
+    fs::rename(&src, &dst).with_context(|| tr!("moving {} to {}", "movendo {} para {}", src.display(), dst.display()))?;
+    // A Thunderstore package may also have BepInEx/{patchers,core,monomod}/<id>: a
+    // disabled mod must not leave its patcher running.
+    if game.loader == Loader::BepInEx {
+        let (dir, off) = (game.dir(), game.dir().join(".linex-disabled"));
+        for sub in ["patchers", "core", "monomod"] {
+            let rel = Path::new("BepInEx").join(sub).join(id);
+            let (src, dst) = if enable { (off.join(&rel), dir.join(&rel)) } else { (dir.join(&rel), off.join(&rel)) };
+            if src.is_dir() && !dst.exists() {
+                if let Some(parent) = dst.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::rename(&src, &dst).with_context(|| tr!("moving {} to {}", "movendo {} para {}", src.display(), dst.display()))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Sends the mod to the trash (recoverable), with everything it installed that no
