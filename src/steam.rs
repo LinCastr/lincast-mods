@@ -108,6 +108,51 @@ fn read_manifest(library: &Path, acf: &Path) -> Option<SteamGame> {
     })
 }
 
+/// Arte do jogo no cache do Steam (`library_hero_blur.jpg`, `logo.png`...). Versões
+/// novas do Steam guardam em subpastas com hash, então olha um nível abaixo também.
+pub fn art(appid: u32, file: &str) -> Option<PathBuf> {
+    for root in steam_roots() {
+        let dir = root.join("appcache/librarycache").join(appid.to_string());
+        let direct = dir.join(file);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        if let Ok(rd) = fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let p = e.path().join(file);
+                if p.is_file() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Opções de inicialização do jogo (de qualquer usuário logado neste Steam).
+pub fn launch_options(appid: u32) -> Vec<String> {
+    let mut out = Vec::new();
+    for root in steam_roots() {
+        let Ok(rd) = fs::read_dir(root.join("userdata")) else { continue };
+        for user in rd.flatten() {
+            let Ok(txt) = fs::read_to_string(user.path().join("config/localconfig.vdf")) else { continue };
+            let v = vdf::parse(&txt);
+            let opt = v
+                .get("UserLocalConfigStore")
+                .and_then(|s| s.get("Software"))
+                .and_then(|s| s.get("Valve"))
+                .and_then(|s| s.get("Steam"))
+                .and_then(|s| s.get("apps"))
+                .and_then(|s| s.get(&appid.to_string()))
+                .and_then(|s| s.str("LaunchOptions"));
+            if let Some(o) = opt {
+                out.push(o.to_string());
+            }
+        }
+    }
+    out
+}
+
 pub fn installed_games() -> Vec<SteamGame> {
     let mut games = Vec::new();
     let mut seen = HashSet::new();

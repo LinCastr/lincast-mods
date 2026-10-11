@@ -1,4 +1,5 @@
 mod games;
+mod gui;
 mod install;
 mod mods;
 mod steam;
@@ -60,7 +61,8 @@ fn run(args: &[String]) -> Result<()> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Err(e) = run(&args) {
+    let result = if args.is_empty() { gui::run() } else { run(&args) };
+    if let Err(e) = result {
         eprintln!("erro: {e:#}");
         std::process::exit(1);
     }

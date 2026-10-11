@@ -16,15 +16,17 @@ done for you.
 - Installs `.zip` archives (and `.7z`/`.rar` through `7z` or `bsdtar`), putting each file in
   the right folder for the loader. Reinstalling a mod keeps its `config.json`.
 - Turns mods on and off without deleting them (moved to `.linex-disabled/` inside the game).
+- Its own window (dark, minimal), with the game art from Steam's cache.
 
 ## Planned
 
-- Its own window (dark, minimal).
 - Nexus "Mod Manager Download" button (`nxm://` links).
 - Warning and fix for the Proton DLL override that MelonLoader/BepInEx need.
 - Thunderstore support.
 
-## Command line (for now)
+Run `linex-mods` with no arguments to open the window.
+
+## Command line
 
 ```
 linex-mods jogos

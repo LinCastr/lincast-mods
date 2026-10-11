@@ -1,0 +1,362 @@
+import { LineEdit, ScrollView } from "std-widgets.slint";
+
+export global Theme {
+    out property <color> bg: #121418;
+    out property <color> sidebar: #0d0f12;
+    out property <color> surface: #181b20;
+    out property <color> hover: #1e2228;
+    out property <color> line: #24282f;
+    out property <color> text: #e4e6ea;
+    out property <color> dim: #8a919b;
+    out property <color> faint: #5c636d;
+    out property <color> accent: #4d8eff;
+    out property <color> warn: #e0b04a;
+    out property <color> error: #e5534b;
+    out property <length> radius: 6px;
+}
+
+export struct GameItem {
+    appid: int,
+    name: string,
+    loader: string,
+}
+
+export struct ModItem {
+    id: string,
+    name: string,
+    detail: string,
+    enabled: bool,
+}
+
+component Toggle inherits Rectangle {
+    in-out property <bool> on;
+    callback toggled(bool);
+    width: 34px;
+    height: 18px;
+    border-radius: self.height / 2;
+    background: on ? Theme.accent : #333840;
+    animate background { duration: 120ms; }
+    Rectangle {
+        width: parent.height - 6px;
+        height: self.width;
+        y: 3px;
+        x: on ? parent.width - self.width - 3px : 3px;
+        animate x { duration: 120ms; easing: ease-out; }
+        border-radius: self.height / 2;
+        background: white;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+    }
+}
+
+component Button inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> primary;
+    callback clicked;
+    height: 32px;
+    min-width: lay.preferred-width;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius;
+    background: primary ? (ta.has-hover ? Theme.accent.brighter(0.12) : Theme.accent)
+                        : (ta.has-hover ? #ffffff1f : #ffffff14);
+    lay := HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        alignment: center;
+        if icon.width > 0: Image {
+            source: icon;
+            width: 14px;
+            colorize: Theme.text;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component GameRow inherits Rectangle {
+    in property <GameItem> game;
+    in property <bool> selected;
+    callback clicked;
+    height: 44px;
+    border-radius: Theme.radius;
+    background: selected ? Theme.hover : (ta.has-hover ? #ffffff08 : transparent);
+    Rectangle {
+        x: 0;
+        width: 3px;
+        height: 18px;
+        border-radius: 2px;
+        background: selected ? Theme.accent : transparent;
+    }
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 8px;
+        alignment: center;
+        spacing: 1px;
+        Text {
+            text: game.name;
+            color: selected ? Theme.text : #c9cdd3;
+            font-size: 13px;
+            overflow: elide;
+        }
+        Text {
+            text: game.loader;
+            color: Theme.faint;
+            font-size: 11px;
+        }
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component ModRow inherits Rectangle {
+    in property <ModItem> item;
+    callback toggled(bool);
+    height: 52px;
+    background: ta.has-hover ? #ffffff06 : transparent;
+    ta := TouchArea { }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: item.name;
+                color: item.enabled ? Theme.text : Theme.faint;
+                font-size: 13px;
+                overflow: elide;
+            }
+            if item.detail != "": Text {
+                text: item.detail;
+                color: Theme.faint;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        Toggle {
+            y: (parent.height - self.height) / 2;
+            on: item.enabled;
+            toggled(v) => { root.toggled(v); }
+        }
+    }
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        x: 20px;
+        width: parent.width - 40px;
+        background: Theme.line;
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "linex-mods";
+    preferred-width: 1100px;
+    preferred-height: 700px;
+    min-width: 760px;
+    min-height: 480px;
+    background: Theme.bg;
+    default-font-size: 13px;
+
+    in property <[GameItem]> games;
+    in property <[ModItem]> mods;
+    in-out property <int> current: -1;
+    in property <string> game-name;
+    in property <string> game-status;
+    in property <bool> game-warning;
+    in property <string> counts;
+    in property <image> hero;
+    in property <image> logo;
+    in property <string> message;
+    in property <bool> message-error;
+    in property <bool> busy;
+    in-out property <string> filter;
+
+    callback select-game(int);
+    callback toggle-mod(string, bool);
+    callback add-mod();
+    callback play();
+    callback open-folder();
+    callback filter-changed(string);
+
+    HorizontalLayout {
+        // Barra lateral: jogos.
+        Rectangle {
+            width: 240px;
+            background: Theme.sidebar;
+            VerticalLayout {
+                padding: 12px;
+                padding-top: 18px;
+                spacing: 2px;
+                Text {
+                    text: "linex-mods";
+                    color: Theme.dim;
+                    font-size: 12px;
+                    font-weight: 600;
+                    letter-spacing: 0.5px;
+                }
+                Rectangle { height: 14px; }
+                Text {
+                    text: "JOGOS";
+                    color: Theme.faint;
+                    font-size: 11px;
+                    font-weight: 600;
+                    letter-spacing: 1px;
+                }
+                Rectangle { height: 6px; }
+                for g[i] in root.games: GameRow {
+                    game: g;
+                    selected: i == root.current;
+                    clicked => {
+                        root.current = i;
+                        root.select-game(i);
+                    }
+                }
+                if root.games.length == 0: Text {
+                    text: "Nenhum jogo com loader de mods encontrado.";
+                    color: Theme.faint;
+                    wrap: word-wrap;
+                }
+                Rectangle { }
+            }
+        }
+
+        // Conteúdo.
+        VerticalLayout {
+            // Cabeçalho com a arte do jogo desfocada.
+            Rectangle {
+                height: 168px;
+                clip: true;
+                background: Theme.surface;
+                Image {
+                    source: root.hero;
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: cover;
+                    opacity: 0.55;
+                }
+                Rectangle {
+                    background: @linear-gradient(180deg, #12141800 0%, #121418 100%);
+                }
+                HorizontalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-bottom: 18px;
+                    spacing: 16px;
+                    VerticalLayout {
+                        alignment: end;
+                        spacing: 4px;
+                        if root.logo.width > 0: Image {
+                            source: root.logo;
+                            height: 64px;
+                            image-fit: contain;
+                            horizontal-alignment: left;
+                        }
+                        if root.logo.width == 0: Text {
+                            text: root.game-name;
+                            color: Theme.text;
+                            font-size: 24px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.game-status;
+                            color: root.game-warning ? Theme.warn : Theme.dim;
+                            font-size: 12px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: end;
+                            Button {
+                                text: "Abrir pasta";
+                                clicked => { root.open-folder(); }
+                            }
+                            Button {
+                                text: root.busy ? "Instalando…" : "Adicionar mod";
+                                icon: @image-url("icons/plus.svg");
+                                clicked => { if !root.busy { root.add-mod(); } }
+                            }
+                            Button {
+                                text: "Jogar";
+                                icon: @image-url("icons/play.svg");
+                                primary: true;
+                                clicked => { root.play(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Busca e contagem.
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                padding-top: 6px;
+                padding-bottom: 10px;
+                spacing: 12px;
+                LineEdit {
+                    placeholder-text: "Buscar mod";
+                    text <=> root.filter;
+                    edited(t) => { root.filter-changed(t); }
+                }
+                Text {
+                    text: root.counts;
+                    color: Theme.faint;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+
+            ScrollView {
+                VerticalLayout {
+                    for m in root.mods: ModRow {
+                        item: m;
+                        toggled(v) => { root.toggle-mod(m.id, v); }
+                    }
+                    if root.mods.length == 0 && root.current >= 0: Text {
+                        text: root.filter == "" ? "Nenhum mod instalado. Use \"Adicionar mod\" para instalar um arquivo .zip." : "Nenhum mod com esse nome.";
+                        color: Theme.faint;
+                        horizontal-alignment: center;
+                        height: 80px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Linha de mensagem (resultado da última ação).
+            if root.message != "": Rectangle {
+                height: 34px;
+                background: Theme.sidebar;
+                Text {
+                    x: 20px;
+                    text: root.message;
+                    color: root.message-error ? Theme.error : Theme.dim;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    width: parent.width - 40px;
+                }
+            }
+        }
+    }
+}
