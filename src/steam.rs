@@ -192,3 +192,30 @@ pub fn installed_games() -> Vec<SteamGame> {
     games.sort_by_key(|a| a.name.to_lowercase());
     games
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn proton_only_when_there_is_no_linux_executable() {
+        let base = std::env::temp_dir().join(format!("linex-proton-{}", std::process::id()));
+        let game = |name: &str| SteamGame { appid: 1, name: name.into(), dir: base.join(name) };
+        let (win, native, stale) = (game("win"), game("native"), game("stale"));
+        for g in [&win, &native, &stale] {
+            fs::create_dir_all(&g.dir).unwrap();
+            fs::write(g.dir.join("Game.exe"), "MZ").unwrap();
+        }
+        // A real ELF binary next to the .exe: native game (Stardew ships both).
+        fs::write(native.dir.join("Game"), b"\x7fELF....").unwrap();
+        fs::set_permissions(native.dir.join("Game"), fs::Permissions::from_mode(0o755)).unwrap();
+        // ELF magic without the executable bit (a .so, say) does not count.
+        fs::write(stale.dir.join("lib.so"), b"\x7fELF....").unwrap();
+        assert!(win.uses_proton());
+        assert!(!native.uses_proton());
+        assert!(stale.uses_proton());
+        assert!(!game("missing").uses_proton());
+        fs::remove_dir_all(base).unwrap();
+    }
+}
