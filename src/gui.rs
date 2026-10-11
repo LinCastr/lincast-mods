@@ -354,7 +354,7 @@ fn properties(g: &Game, id: &str) -> Option<(String, Vec<PropRow>)> {
 /// Selects the file in the file manager (FileManager1 over D-Bus, which Dolphin,
 /// Nautilus and others implement); falls back to opening the folder.
 fn show_in_folder(p: &std::path::Path) {
-    let uri = format!("file://{}", p.display());
+    let uri = file_uri(p);
     let ok = Command::new("dbus-send")
         .args([
             "--session",
@@ -370,6 +370,21 @@ fn show_in_folder(p: &std::path::Path) {
     if !ok {
         open(&p.parent().unwrap_or(p).to_string_lossy());
     }
+}
+
+/// file:// URI with the path percent-encoded. A raw comma would split dbus-send's
+/// `array:string:` argument in two, and spaces or '#' make an invalid URI.
+fn file_uri(p: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &b in p.as_os_str().as_bytes() {
+        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{b:02X}"));
+        }
+    }
+    uri
 }
 
 fn color(c: theme::Rgb) -> slint::Color {
@@ -1280,4 +1295,16 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     ipc::cleanup();
     r?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_uri_escapes_commas_and_spaces() {
+        let u = file_uri(std::path::Path::new("/games/Mods/A, B #2/ção"));
+        assert_eq!(u, "file:///games/Mods/A%2C%20B%20%232/%C3%A7%C3%A3o");
+        assert!(!u.contains(','));
+    }
 }
