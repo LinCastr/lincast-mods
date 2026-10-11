@@ -214,6 +214,7 @@ fn connected(name: &str, premium: bool) -> String {
 }
 
 pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
+    desktop::refresh_desktop_file();
     let ui = AppWindow::new()?;
     // Só funciona depois da plataforma existir (o AppWindow::new a cria).
     let _ = slint::set_xdg_app_id("linex-mods");
