@@ -106,6 +106,7 @@ linex-mods enable|disable|remove <game> <mod>
 linex-mods unity                list Unity games without a loader
 linex-mods loader <game> melonloader|bepinex
 linex-mods updates <game>       check Nexus mods for new versions
+linex-mods others               list Heroic and Lutris games (detection only for now)
 linex-mods ts install <game> <package>
                                 Thunderstore package + dependencies
                                 (Owner-Name[-1.2.3], a thunderstore.io page or ror2mm:// link)
@@ -117,7 +118,8 @@ linex-mods ts install <game> <package>
 
 - Thunderstore in the window: search and the "Install with Mod Manager" button.
 - Nexus collections.
-- Heroic and Lutris games.
+- Heroic and Lutris games: detection is done (`linex-mods others`); installing mods in them
+  is next.
 
 ## Credits
 

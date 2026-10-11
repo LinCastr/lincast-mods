@@ -80,6 +80,7 @@ translations from `lang/`). The release profile uses LTO, so it takes ~2.5 min.
 | `src/records.rs` | `~/.local/share/linex-mods/<appid>.json`: which files each mod installed. |
 | `src/nexus.rs` | Nexus API v1, `nxm://` links, API key in the keyring (file fallback, 0600). |
 | `src/thunderstore.rs` | Thunderstore API: package refs, dependency resolution, download, install (CLI `ts install`). |
+| `src/launchers.rs` | Heroic (Epic, GOG, Amazon, sideload) and Lutris game detection; CLI `others`. |
 | `src/meta.rs` | Mod icons (64px PNG cache) and cached Nexus mod info (6 h TTL). |
 | `src/loaders.rs` | Installing MelonLoader / BepInEx (5 for Mono, 6 BE for IL2CPP) into Unity games. |
 | `src/desktop.rs` | `.desktop` entry, icon, `x-scheme-handler/nxm` registration. |
@@ -136,4 +137,8 @@ Next / open:
   it from r2modman, ask the user first).
 - Rewriting the first ~15 Portuguese commit messages needs a force push to the public
   repo: only with the user's explicit OK.
+- Heroic/Lutris: only detection. Installing mods there needs a game model that isn't
+  `SteamGame` (records are keyed by Steam AppID, the header shows Steam art and launch
+  options): a design decision, ask the user.
+- Nexus collections: not started (needs a Nexus account to test for real).
 - No GitHub releases yet (user's choice). Don't create one.

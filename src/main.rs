@@ -7,6 +7,7 @@ mod games;
 mod gui;
 mod install;
 mod ipc;
+mod launchers;
 mod loaders;
 mod log;
 mod meta;
@@ -31,6 +32,7 @@ const USAGE: &str = "usage:
   linex-mods remove <game> <mod>  (sends it to the trash)
   linex-mods unity                list Unity games without a loader
   linex-mods loader <game> melonloader|bepinex
+  linex-mods others               list Heroic and Lutris games (detection only for now)
   linex-mods updates <game>       check the game's Nexus mods for new versions
   linex-mods ts install <game> <package>
                                   install a Thunderstore package and its dependencies
@@ -134,6 +136,21 @@ fn run(args: &[String]) -> Result<()> {
             println!("{file} installed in {}", g.dir.display());
         }
         ("updates", [q]) => updates(&game(q)?)?,
+        ("others", []) => {
+            let list = launchers::installed_games();
+            if list.is_empty() {
+                println!("{}", tr!("No Heroic or Lutris games found.", "Nenhum jogo do Heroic ou do Lutris encontrado."));
+            }
+            for g in list {
+                let kind = match (games::detect_loader(&g.dir), loaders::unity_kind(&g.dir)) {
+                    (Some(l), _) => l.label().to_string(),
+                    (None, Some(true)) => "Unity IL2CPP".into(),
+                    (None, Some(false)) => "Unity Mono".into(),
+                    (None, None) => "-".into(),
+                };
+                println!("{:<7} {}  [{kind}]  {}", g.launcher, g.name, g.dir.display());
+            }
+        }
         ("ts" | "thunderstore", ["install", q, pkg]) => {
             let g = game(q)?;
             let r = thunderstore::PackageRef::parse(pkg)?;
