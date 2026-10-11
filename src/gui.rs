@@ -254,20 +254,17 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
                 },
             };
             let icon = crate::meta::nexus_icon(domain, *id);
-            if !icon.is_file() {
-                if let Some(url) = &i.picture {
-                    if crate::meta::fetch_nexus_icon(url, &icon).is_ok() {
-                        fresh_icons += 1;
-                        if fresh_icons % 12 == 0 {
-                            ping(&weak, "{}".into());
-                        }
-                    }
+            if !icon.is_file()
+                && let Some(url) = &i.picture
+                && crate::meta::fetch_nexus_icon(url, &icon).is_ok() {
+                fresh_icons += 1;
+                if fresh_icons % 12 == 0 {
+                    ping(&weak, "{}".into());
                 }
             }
-            if let (Some(remote), Some(local)) = (&i.version, local) {
-                if nexus::is_newer(remote, local) {
-                    found.insert(id.to_string(), remote.clone().into());
-                }
+            if let (Some(remote), Some(local)) = (&i.version, local)
+                && nexus::is_newer(remote, local) {
+                found.insert(id.to_string(), remote.clone().into());
             }
         }
         crate::meta::save_info(&info);
@@ -477,10 +474,9 @@ fn ago(t: u64) -> String {
 
 fn remove_toast(id: i32) {
     NOTES.with(|c| {
-        if let Some(n) = c.borrow().as_ref() {
-            if let Some(i) = (0..n.toasts.row_count()).find(|&i| n.toasts.row_data(i).is_some_and(|t| t.id == id)) {
-                n.toasts.remove(i);
-            }
+        if let Some(n) = c.borrow().as_ref()
+            && let Some(i) = (0..n.toasts.row_count()).find(|&i| n.toasts.row_data(i).is_some_and(|t| t.id == id)) {
+            n.toasts.remove(i);
         }
     });
 }
@@ -578,7 +574,7 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         let mut last = u64::MAX;
         let w2 = weak.clone();
         let dl = nexus::download(&link, &key, |done, total| {
-            let step = if total > 0 { done * 100 / total } else { done / (1024 * 1024) };
+            let step = (done * 100).checked_div(total).unwrap_or(done / (1024 * 1024));
             if step != last {
                 last = step;
                 let txt = if total > 0 {
@@ -813,7 +809,7 @@ fn install_loader(ui: &AppWindow, state: &State, appid: i32, which: &str) {
         let w2 = weak.clone();
         let label = loader.label();
         let r = loaders::install(&dir, loader, il2cpp, |done, total| {
-            let step = if total > 0 { done * 100 / total } else { done / (1024 * 1024) };
+            let step = (done * 100).checked_div(total).unwrap_or(done / (1024 * 1024));
             if step != last {
                 last = step;
                 let txt = if total > 0 { tr!("Downloading {label}… {step}%", "Baixando o {label}… {step}%") } else { tr!("Downloading {label}… {step} MB", "Baixando o {label}… {step} MB") };
@@ -1207,10 +1203,9 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             );
             let changed = last.borrow().as_ref().is_some_and(|l| *l != now);
             *last.borrow_mut() = Some(now);
-            if changed {
-                if let Some(ui) = weak.upgrade() {
-                    refresh_mods(&ui, &st);
-                }
+            if changed
+                && let Some(ui) = weak.upgrade() {
+                refresh_mods(&ui, &st);
             }
         });
     }

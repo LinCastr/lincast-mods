@@ -231,10 +231,9 @@ fn describe(loader: Loader, path: &Path, enabled: bool) -> Option<Mod> {
             if let Some(man) = find_manifest(path, 2) {
                 // Pacote com vários componentes ("Ridgeside Village/[CP] …"): o nome
                 // da pasta descreve melhor que o do primeiro componente.
-                if path.join("manifest.json").is_file() {
-                    if let Some(n) = json_field(&man, "Name") {
-                        m.name = n;
-                    }
+                if path.join("manifest.json").is_file()
+                    && let Some(n) = json_field(&man, "Name") {
+                    m.name = n;
                 }
                 m.version = json_field(&man, "Version");
                 m.author = json_field(&man, "Author");
@@ -277,7 +276,7 @@ pub fn list(game: &Game) -> Vec<Mod> {
             m.nexus_key = m.smapi_nexus_id.map(|id| (domain.clone(), id));
         }
     }
-    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    mods.sort_by_key(|a| a.name.to_lowercase());
     mods
 }
 

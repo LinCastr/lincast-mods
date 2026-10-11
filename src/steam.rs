@@ -10,7 +10,6 @@ pub struct SteamGame {
     pub appid: u32,
     pub name: String,
     pub dir: PathBuf,
-    pub library: PathBuf,
 }
 
 impl SteamGame {
@@ -104,7 +103,6 @@ fn read_manifest(library: &Path, acf: &Path) -> Option<SteamGame> {
         appid,
         name: st.str("name").unwrap_or("?").to_string(),
         dir,
-        library: library.to_path_buf(),
     })
 }
 
@@ -138,10 +136,9 @@ pub fn icon(appid: u32) -> Option<PathBuf> {
         if let Ok(rd) = fs::read_dir(&dir) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_string();
-                if let Some(stem) = n.strip_suffix(".jpg") {
-                    if stem.len() == 40 && stem.chars().all(|c| c.is_ascii_hexdigit()) {
-                        return Some(e.path());
-                    }
+                if let Some(stem) = n.strip_suffix(".jpg")
+                    && stem.len() == 40 && stem.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Some(e.path());
                 }
             }
         }
@@ -185,15 +182,13 @@ pub fn installed_games() -> Vec<SteamGame> {
         for e in rd.flatten() {
             let name = e.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with("appmanifest_") && name.ends_with(".acf") {
-                if let Some(g) = read_manifest(&lib, &e.path()) {
-                    if seen.insert(g.appid) {
-                        games.push(g);
-                    }
-                }
+            if name.starts_with("appmanifest_") && name.ends_with(".acf")
+                && let Some(g) = read_manifest(&lib, &e.path())
+                && seen.insert(g.appid) {
+                games.push(g);
             }
         }
     }
-    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    games.sort_by_key(|a| a.name.to_lowercase());
     games
 }

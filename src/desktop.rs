@@ -67,16 +67,14 @@ pub fn refresh_desktop_file() {
     let file = apps_dir().join(DESKTOP_ID);
     let exists = file.is_file();
     // Atalho de versão antiga (ícone genérico): só troca o ícone, mantém o resto.
-    if let Ok(txt) = fs::read_to_string(&file) {
-        if txt.contains("Icon=applications-games") {
-            let _ = fs::write(&file, txt.replace("Icon=applications-games", "Icon=linex-mods"));
-        }
+    if let Ok(txt) = fs::read_to_string(&file)
+        && txt.contains("Icon=applications-games") {
+        let _ = fs::write(&file, txt.replace("Icon=applications-games", "Icon=linex-mods"));
     }
-    if !exists || !desktop_exec_ok() {
-        if let Ok(exe) = exe_path() {
-            let _ = write_desktop(&exe);
-            let _ = Command::new("update-desktop-database").arg(apps_dir()).status();
-        }
+    if (!exists || !desktop_exec_ok())
+        && let Ok(exe) = exe_path() {
+        let _ = write_desktop(&exe);
+        let _ = Command::new("update-desktop-database").arg(apps_dir()).status();
     }
 }
 

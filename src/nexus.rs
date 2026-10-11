@@ -85,11 +85,10 @@ pub fn load_key() -> Option<String> {
 /// funcionando, cai num arquivo legível só pelo usuário. Devolve onde ficou.
 pub fn save_key(key: &str) -> Result<String> {
     let key = key.trim();
-    if let Some(e) = entry() {
-        if e.set_password(key).is_ok() && e.get_password().ok().as_deref() == Some(key) {
-            let _ = fs::remove_file(key_file());
-            return Ok(tr!("in the system keyring", "no chaveiro do sistema"));
-        }
+    if let Some(e) = entry()
+        && e.set_password(key).is_ok() && e.get_password().ok().as_deref() == Some(key) {
+        let _ = fs::remove_file(key_file());
+        return Ok(tr!("in the system keyring", "no chaveiro do sistema"));
     }
     use std::os::unix::fs::OpenOptionsExt;
     let p = key_file();

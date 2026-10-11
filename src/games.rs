@@ -3,6 +3,8 @@
 use crate::steam::{self, SteamGame};
 use std::path::{Path, PathBuf};
 
+// "MelonLoader" is the product's name, not a stutter.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Loader {
     MelonLoader,

@@ -25,11 +25,10 @@ fn paths() -> Vec<PathBuf> {
 /// Manda a mensagem para a instância aberta. `false` = não há nenhuma.
 pub fn send(msg: &str) -> bool {
     for p in paths() {
-        if let Ok(mut s) = UnixStream::connect(&p) {
-            if s.write_all(format!("{msg}\n").as_bytes()).is_ok() {
-                crate::log::line(&format!("handed over to the open window ({})", p.display()));
-                return true;
-            }
+        if let Ok(mut s) = UnixStream::connect(&p)
+            && s.write_all(format!("{msg}\n").as_bytes()).is_ok() {
+            crate::log::line(&format!("handed over to the open window ({})", p.display()));
+            return true;
         }
     }
     false
