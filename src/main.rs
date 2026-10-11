@@ -1,6 +1,7 @@
 // First, so `tr!` is visible in every module below.
 #[macro_use]
 mod i18n;
+mod browse;
 mod config;
 mod desktop;
 mod games;
@@ -32,6 +33,8 @@ const USAGE: &str = "usage:
   linex-mods remove <game> <mod>  (sends it to the trash)
   linex-mods unity                list Unity games without a loader
   linex-mods loader <game> melonloader|bepinex
+  linex-mods search <game> nexus|ts [words]
+                                  search mods on the Nexus or Thunderstore
   linex-mods others               list Heroic and Lutris games (detection only for now)
   linex-mods updates <game>       check the game's Nexus mods for new versions
   linex-mods ts install <game> <package>
@@ -136,6 +139,28 @@ fn run(args: &[String]) -> Result<()> {
             println!("{file} installed in {}", g.dir.display());
         }
         ("updates", [q]) => updates(&game(q)?)?,
+        ("search", [q, site, words @ ..]) => {
+            let g = game(q)?;
+            let query = words.join(" ");
+            let installed = mods::list(&g);
+            let list = match *site {
+                "nexus" => browse::nexus_search(&g.nexus_domain(), &query, browse::Sort::Popular, false)?,
+                "ts" | "thunderstore" => {
+                    let c = thunderstore::community_for(g.steam.appid).context(tr!("this game is not on Thunderstore", "este jogo não está na Thunderstore"))?;
+                    browse::ts_search(&c, &query, browse::Sort::Popular, false)?
+                }
+                _ => bail!("search: nexus or ts"),
+            };
+            for l in list.iter().take(15) {
+                let state = match browse::match_installed(l, &installed) {
+                    browse::Match::Installed { newer: true } => " [update]".to_string(),
+                    browse::Match::Installed { .. } => " [installed]".to_string(),
+                    browse::Match::Similar { name, from } => format!(" [similar: {name} ({from:?})]"),
+                    browse::Match::None => String::new(),
+                };
+                println!("{:>9}  {} {} — {}{state}", l.downloads, l.name, l.version, l.author);
+            }
+        }
         ("others", []) => {
             let list = launchers::installed_games();
             if list.is_empty() {

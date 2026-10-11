@@ -56,6 +56,23 @@ export struct ModItem {
     enabled: bool,
 }
 
+// A search result in "Browse".
+export struct BrowseItem {
+    id: string,
+    name: string,
+    author: string,
+    summary: string,
+    version: string,
+    downloads: string,
+    icon: image,
+    has-icon: bool,
+    // 0 not installed, 1 installed, 2 update available, 3 similar mod installed.
+    state: int,
+    // Similar mod installed / dependencies, in a line under the summary.
+    note: string,
+    page: string,
+}
+
 component Toggle inherits Rectangle {
     in-out property <bool> on;
     callback toggled(bool);
@@ -858,6 +875,170 @@ component AddGamePage inherits VerticalLayout {
     }
 }
 
+// Tab under the game header ("Mods", "Browse"): text, underlined when selected.
+component TabLink inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    callback clicked;
+    width: label.preferred-width;
+    height: 30px;
+    label := Text {
+        y: 0;
+        height: parent.height - 2px;
+        text: root.text;
+        color: root.selected ? Theme.text : (ta.has-hover ? Theme.dim : Theme.faint);
+        font-size: 14px;
+        font-weight: root.selected ? 700 : 500;
+        vertical-alignment: center;
+    }
+    if root.selected: Rectangle {
+        y: parent.height - 2px;
+        height: 2px;
+        border-radius: 1px;
+        background: Theme.accent;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Site button in "Browse": the site's mark and name.
+component SourceButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <color> mark;
+    in property <bool> selected;
+    callback clicked;
+    height: 32px;
+    width: lay.preferred-width;
+    border-radius: Theme.radius;
+    background: root.selected ? #ffffff14 : (ta.has-hover ? #ffffff0a : transparent);
+    border-width: 1px;
+    border-color: root.selected ? Theme.line.brighter(0.6) : Theme.line;
+    lay := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 14px;
+        spacing: 8px;
+        Image {
+            source: root.icon;
+            width: 15px;
+            colorize: root.selected ? root.mark : Theme.faint;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            color: root.selected ? Theme.text : Theme.dim;
+            font-size: 13px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component BrowseRow inherits Rectangle {
+    in property <BrowseItem> item;
+    in property <bool> nexus;
+    callback install();
+    callback open-url(string);
+    height: 64px;
+    border-radius: Theme.radius;
+    background: ta.has-hover ? #ffffff06 : transparent;
+    ta := TouchArea { }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        Rectangle {
+            width: 44px;
+            height: 44px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 6px;
+            clip: true;
+            background: Theme.surface;
+            if item.has-icon: Image {
+                source: item.icon;
+                width: parent.width;
+                height: parent.height;
+                image-fit: cover;
+            }
+            if !item.has-icon: Image {
+                source: @image-url("icons/puzzle.svg");
+                width: 16px;
+                colorize: Theme.faint;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: item.name;
+                    color: name-ta.has-hover ? Theme.accent : Theme.text;
+                    font-size: 13px;
+                    font-weight: 600;
+                    overflow: elide;
+                    horizontal-stretch: 0;
+                    max-width: self.preferred-width;
+                    name-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open-url(item.page); }
+                    }
+                }
+                Text {
+                    text: item.author != "" ? @tr("by {}", item.author) : "";
+                    color: Theme.faint;
+                    font-size: 12px;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: item.summary;
+                color: Theme.dim;
+                font-size: 12px;
+                overflow: elide;
+            }
+            if item.note != "": Text {
+                text: item.note;
+                color: item.state == 3 ? Theme.warn : Theme.faint;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+        Text {
+            width: 90px;
+            text: item.downloads;
+            color: Theme.faint;
+            font-size: 12px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 120px;
+            if item.state == 1: Text {
+                x: parent.width - self.width;
+                height: parent.height;
+                text: @tr("Installed");
+                color: Theme.faint;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            if item.state != 1: Button {
+                x: parent.width - self.width;
+                y: (parent.height - self.height) / 2;
+                text: item.state == 2 ? @tr("Update") : root.nexus ? @tr("Download") : @tr("Install");
+                primary: item.state == 2;
+                clicked => { root.install(); }
+            }
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "linex-mods";
     preferred-width: 1180px;
@@ -904,6 +1085,22 @@ export component AppWindow inherits Window {
     in property <string> wallust-path;
     in-out property <int> theme-mode;
     in-out property <int> lang-mode;
+    // Game page: 0 its mods, 1 browse.
+    in-out property <int> game-tab;
+    in property <bool> has-nexus;
+    in property <bool> has-thunderstore;
+    // 1 Nexus, 2 Thunderstore.
+    in-out property <int> browse-source: 1;
+    in-out property <string> browse-query;
+    in-out property <int> browse-sort;
+    in-out property <bool> browse-hidden;
+    in property <[BrowseItem]> browse-items;
+    in property <string> browse-status;
+    in property <bool> browse-loading;
+    in-out property <bool> confirm-open;
+    in property <string> confirm-title;
+    in property <string> confirm-text;
+    in property <string> confirm-button;
 
     callback select-game(int);
     callback toggle-mod(string, bool);
@@ -933,6 +1130,12 @@ export component AppWindow inherits Window {
     callback clear-notices();
     callback dismiss-toast(int);
     callback nxm-finished(int, string, bool);
+    callback browse-search();
+    callback browse-query-edited(string);
+    callback browse-install(string);
+    callback browse-results(int, string, string);
+    callback browse-icons(int);
+    callback confirm-accept();
 
     HorizontalLayout {
         // Barra lateral: jogos.
@@ -1033,8 +1236,10 @@ export component AppWindow inherits Window {
 
         if root.page == 0: VerticalLayout {
             // Header in the style of Steam's library: game art fading into the background.
+            // Lower while browsing, so more results fit.
             Rectangle {
-                height: 210px;
+                height: root.game-tab == 1 ? 150px : 210px;
+                animate height { duration: 150ms; easing: ease-out; }
                 clip: true;
                 background: Theme.surface;
                 Image {
@@ -1125,6 +1330,29 @@ export component AppWindow inherits Window {
                 }
             }
 
+            // Tabs: the game's mods, or browse the mod sites.
+            HorizontalLayout {
+                padding-left: 28px;
+                padding-right: 28px;
+                padding-bottom: 14px;
+                spacing: 22px;
+                TabLink {
+                    text: @tr("Mods");
+                    selected: root.game-tab == 0;
+                    clicked => { root.game-tab = 0; }
+                }
+                TabLink {
+                    text: @tr("Browse");
+                    selected: root.game-tab == 1;
+                    clicked => {
+                        root.game-tab = 1;
+                        root.browse-search();
+                    }
+                }
+                Rectangle { }
+            }
+
+            if root.game-tab == 0: VerticalLayout {
             // List bar: search, filter and count.
             HorizontalLayout {
                 padding-left: 28px;
@@ -1266,6 +1494,87 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+            }
+
+            if root.game-tab == 1: VerticalLayout {
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    padding-top: 4px;
+                    padding-bottom: 12px;
+                    spacing: 12px;
+                    if root.has-nexus: SourceButton {
+                        text: "Nexus Mods";
+                        icon: @image-url("icons/nexus.svg");
+                        mark: Theme.nexus;
+                        selected: root.browse-source == 1;
+                        clicked => {
+                            root.browse-source = 1;
+                            root.browse-search();
+                        }
+                    }
+                    if root.has-thunderstore: SourceButton {
+                        text: "Thunderstore";
+                        icon: @image-url("icons/thunderstore.svg");
+                        mark: Theme.thunderstore;
+                        selected: root.browse-source == 2;
+                        clicked => {
+                            root.browse-source = 2;
+                            root.browse-search();
+                        }
+                    }
+                    SearchBox {
+                        width: 240px;
+                        text <=> root.browse-query;
+                        edited(t) => { root.browse-query-edited(t); }
+                    }
+                    Segmented {
+                        options: [@tr("Popular"), @tr("Updated"), @tr("Name")];
+                        current <=> root.browse-sort;
+                        changed => { root.browse-search(); }
+                    }
+                    Rectangle { }
+                    LinkText {
+                        text: root.browse-hidden ? @tr("Hide adult and deprecated") : @tr("Show adult and deprecated");
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        clicked => {
+                            root.browse-hidden = !root.browse-hidden;
+                            root.browse-search();
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 28px;
+                    padding-right: 28px;
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.line;
+                    }
+                }
+                if root.browse-status != "" || root.browse-loading: Text {
+                    text: root.browse-loading ? @tr("Searching…") : root.browse-status;
+                    color: Theme.faint;
+                    horizontal-alignment: center;
+                    height: 80px;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                }
+                if !root.browse-loading: ScrollView {
+                    VerticalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        padding-top: 6px;
+                        padding-bottom: 16px;
+                        for b in root.browse-items: BrowseRow {
+                            item: b;
+                            nexus: root.browse-source == 1;
+                            install => { root.browse-install(b.id); }
+                            open-url(u) => { root.open-url(u); }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1318,6 +1627,59 @@ export component AppWindow inherits Window {
                         color: Theme.text;
                         font-size: 13px;
                         wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+
+    // Confirmation before installing (dependencies, a similar mod already installed).
+    if root.confirm-open: Rectangle {
+        background: #00000070;
+        TouchArea {
+            clicked => { root.confirm-open = false; }
+        }
+        Rectangle {
+            width: min(520px, parent.width - 80px);
+            height: confirm-lay.preferred-height;
+            border-radius: 12px;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: #00000080;
+            TouchArea { }
+            confirm-lay := VerticalLayout {
+                padding: 22px;
+                spacing: 12px;
+                Text {
+                    text: root.confirm-title;
+                    color: Theme.text;
+                    font-size: 17px;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.confirm-text;
+                    color: Theme.dim;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    padding-top: 6px;
+                    Button {
+                        text: @tr("Cancel");
+                        clicked => { root.confirm-open = false; }
+                    }
+                    Button {
+                        text: root.confirm-button;
+                        primary: true;
+                        clicked => {
+                            root.confirm-open = false;
+                            root.confirm-accept();
+                        }
                     }
                 }
             }

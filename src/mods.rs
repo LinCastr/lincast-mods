@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// Where a mod came from, as far as the app can tell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Source {
     #[default]
     Unknown,
@@ -33,6 +33,26 @@ pub struct Mod {
     pub source: Source,
     /// Thunderstore package (namespace, name): from the record or the r2modman folder name.
     pub ts_key: Option<(String, String)>,
+}
+
+#[cfg(test)]
+impl Mod {
+    /// A mod with only a name, for tests elsewhere.
+    pub fn bare(name: &str) -> Mod {
+        Mod {
+            id: name.into(),
+            name: name.into(),
+            version: None,
+            author: None,
+            enabled: true,
+            nexus: None,
+            nexus_key: None,
+            smapi_nexus_id: None,
+            icon_src: None,
+            source: Source::Unknown,
+            ts_key: None,
+        }
+    }
 }
 
 /// "Nexus:1234" or "Nexus:1234@sub" among the UpdateKeys of a SMAPI manifest.

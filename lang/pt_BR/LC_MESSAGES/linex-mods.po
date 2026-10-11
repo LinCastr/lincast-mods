@@ -173,3 +173,45 @@ msgstr "Mover para a Lixeira"
 
 msgid "Check for updates"
 msgstr "Buscar atualizações"
+
+msgid "Mods"
+msgstr "Mods"
+
+msgid "Browse"
+msgstr "Explorar"
+
+msgid "by {}"
+msgstr "por {}"
+
+msgid "Installed"
+msgstr "Instalado"
+
+msgid "Update"
+msgstr "Atualizar"
+
+msgid "Download"
+msgstr "Baixar"
+
+msgid "Install"
+msgstr "Instalar"
+
+msgid "Popular"
+msgstr "Populares"
+
+msgid "Updated"
+msgstr "Recentes"
+
+msgid "Name"
+msgstr "Nome"
+
+msgid "Hide adult and deprecated"
+msgstr "Esconder adultos e descontinuados"
+
+msgid "Show adult and deprecated"
+msgstr "Mostrar adultos e descontinuados"
+
+msgid "Searching…"
+msgstr "Buscando…"
+
+msgid "Cancel"
+msgstr "Cancelar"

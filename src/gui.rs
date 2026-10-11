@@ -10,6 +10,8 @@ use std::rc::Rc;
 
 slint::include_modules!();
 
+mod browse_tab;
+
 struct State {
     games: Vec<Game>,
     current: Option<usize>,
@@ -17,6 +19,11 @@ struct State {
     updates: std::collections::HashMap<(u32, u64), String>,
     checked: std::collections::HashSet<u32>,
     icons: RefCell<std::collections::HashMap<PathBuf, Image>>,
+    /// Last "Browse" results, and a counter so an old search can't overwrite a newer one.
+    browse: Vec<browse_tab::Result>,
+    browse_gen: u64,
+    /// What the confirmation dialog does on "OK".
+    pending: Option<browse_tab::Pending>,
 }
 
 impl State {
@@ -186,6 +193,7 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     ui.set_filter_mode(0);
     refresh_mods(ui, state);
     check_updates(ui, state, appid, false);
+    browse_tab::on_select(ui, state);
     let mut cfg = config::load();
     if cfg.last_game != Some(appid) {
         cfg.last_game = Some(appid);
@@ -644,16 +652,27 @@ fn handle_thunderstore(ui: &AppWindow, state: &State, url: &str) {
         games.swap(0, i);
     }
     set_progress(ui, tr!("Looking up {} on Thunderstore…", "Procurando {} na Thunderstore…", r.full_name()));
+    install_package(ui, r, None, games);
+}
+
+/// Installs a Thunderstore package with its dependencies off the UI thread: in `known`,
+/// or in whichever of `games` the package is for. A link from the website (no `known`)
+/// also gets a system notification, since the window may be behind the browser.
+fn install_package(ui: &AppWindow, r: crate::thunderstore::PackageRef, known: Option<Game>, games: Vec<Game>) {
     let weak = ui.as_weak();
+    let from_link = known.is_none();
     std::thread::spawn(move || {
         let finish = |w: &slint::Weak<AppWindow>, appid: i32, msg: String, err: bool| {
             log::line(&msg);
-            notify(&if err { tr!("Mod not installed", "Mod não instalado") } else { msg.clone() }, if err { &msg } else { "Thunderstore" }, err);
+            if from_link {
+                notify(&if err { tr!("Mod not installed", "Mod não instalado") } else { msg.clone() }, if err { &msg } else { "Thunderstore" }, err);
+            }
             let _ = w.upgrade_in_event_loop(move |ui| ui.invoke_nxm_finished(appid, msg.into(), err));
         };
-        let Some(game) = crate::thunderstore::game_for(&r, &games) else {
+        let Some(game) = known.or_else(|| crate::thunderstore::game_for(&r, &games).cloned()) else {
             return finish(&weak, -1, tr!("{} is not for any of the detected games with BepInEx or MelonLoader.", "{} não é de nenhum dos jogos detectados com BepInEx ou MelonLoader.", r.full_name()), true);
         };
+        let game = &game;
         let appid = game.steam.appid as i32;
         let w2 = weak.clone();
         let res = crate::thunderstore::install(game, &r, |step| {
@@ -913,6 +932,9 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         updates: Default::default(),
         checked: Default::default(),
         icons: Default::default(),
+        browse: Vec::new(),
+        browse_gen: 0,
+        pending: None,
     }));
 
     {
@@ -1171,9 +1193,10 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         ui.on_nxm_finished(move |appid, msg, err| {
             let Some(ui) = weak.upgrade() else { return };
             set_msg(&ui, msg, err);
-            let st = state.borrow();
+            let mut st = state.borrow_mut();
             if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
                 refresh_mods(&ui, &st);
+                browse_tab::reclassify(&ui, &mut st);
             }
         });
     }
@@ -1228,6 +1251,57 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
                 Err(e) => set_msg(&ui, tr!("Couldn't register: {e:#}", "Não deu para registrar: {e:#}"), true),
             }
             ui.set_handler_ok(desktop::is_nxm_handler());
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_search(move || {
+            if let Some(ui) = weak.upgrade() {
+                browse_tab::search(&ui, &mut state.borrow_mut());
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        ui.on_browse_query_edited(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                browse_tab::query_edited(&ui);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_results(move |generation, json, err| {
+            if let Some(ui) = weak.upgrade() {
+                browse_tab::on_results(&ui, &mut state.borrow_mut(), generation, &json, &err);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_icons(move |generation| {
+            let st = state.borrow();
+            if let Some(ui) = weak.upgrade()
+                && generation as u64 == st.browse_gen
+            {
+                browse_tab::refresh_items(&ui, &st);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_browse_install(move |id| {
+            if let Some(ui) = weak.upgrade() {
+                browse_tab::install(&ui, &mut state.borrow_mut(), &id);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_confirm_accept(move || {
+            if let Some(ui) = weak.upgrade() {
+                browse_tab::confirm_accept(&ui, &mut state.borrow_mut());
+            }
         });
     }
     ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
