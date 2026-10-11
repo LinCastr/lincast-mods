@@ -29,8 +29,13 @@ Most bugs come from rushed edits, not hard tasks.
    OK. Trivial isolated fixes can go straight in.
 
 Absolute rules:
-- **Don't `git push`, force push, open releases or change repo settings** unless the user
-  asks. Commits are fine.
+- **Pushing:** never push to `main`, force push, open releases or change repo settings
+  unless the user asks. Pushing your own work to a `claude/...` branch is allowed and
+  expected: in a cloud session, push after every commit so the work survives if the
+  container breaks (a session once lost its network and its commits were stranded).
+- **Never run a test with a safety guard removed against real paths.** To prove a test
+  catches a bug, every path it can touch must be inside its own temporary HOME. Cloud
+  containers run as root: a test that trashed `/etc` there killed the session.
 - **Privacy:** never commit personal data, tokens, API keys, logs, or paths with a real
   home directory (`/home/<user>`). The repo is public.
 - **Never overwrite user state** (`~/.config/linex-mods/`, `~/.local/share/linex-mods/`,
