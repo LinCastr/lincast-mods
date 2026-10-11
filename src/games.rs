@@ -61,7 +61,20 @@ pub struct Game {
     pub nexus: Option<&'static str>,
 }
 
+/// "Slime Rancher 2" → "slimerancher2": é como o Nexus forma o domínio da maioria
+/// dos jogos (stardewvalley, bloonstd6, megabonk...).
+fn as_nexus_domain(name: &str) -> String {
+    name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase()
+}
+
 impl Game {
+    /// Este jogo é o do domínio do Nexus? Usa a tabela conhecida e, para o resto,
+    /// o nome do Steam no formato do domínio.
+    pub fn matches_nexus(&self, domain: &str) -> bool {
+        let d = domain.to_lowercase();
+        self.nexus.map(|n| n == d).unwrap_or(false) || as_nexus_domain(&self.steam.name) == d
+    }
+
     pub fn dir(&self) -> &Path {
         &self.steam.dir
     }
@@ -114,8 +127,14 @@ pub fn find(query: &str) -> Option<Game> {
     games.into_iter().find(|g| g.steam.name.to_lowercase().contains(&q))
 }
 
-pub fn find_by_nexus(domain: &str) -> Option<Game> {
-    moddable_games()
-        .into_iter()
-        .find(|g| g.nexus.is_some_and(|n| n.eq_ignore_ascii_case(domain)))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dominio_pelo_nome() {
+        assert_eq!(as_nexus_domain("Slime Rancher 2"), "slimerancher2");
+        assert_eq!(as_nexus_domain("Megabonk"), "megabonk");
+        assert_eq!(as_nexus_domain("Bloons TD 6"), "bloonstd6");
+    }
 }

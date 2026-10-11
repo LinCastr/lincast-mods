@@ -135,7 +135,7 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         }
     };
     log::line(&format!("recebido {}", link.redacted()));
-    let Some(i) = state.games.iter().position(|g| g.nexus.is_some_and(|n| n == link.domain)) else {
+    let Some(i) = state.games.iter().position(|g| g.matches_nexus(&link.domain)) else {
         return set_msg(
             ui,
             format!("O link é de \"{}\", que não está entre os jogos detectados com loader de mods.", link.domain),
