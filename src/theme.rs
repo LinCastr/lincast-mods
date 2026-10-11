@@ -40,7 +40,8 @@ pub fn mtime(p: &PathBuf) -> Option<SystemTime> {
 
 fn parse_hex(s: &str) -> Option<Rgb> {
     let h = s.trim().trim_start_matches('#');
-    if h.len() < 6 {
+    // Byte slicing below: anything non-ASCII would split a character and panic.
+    if h.len() < 6 || !h.is_ascii() {
         return None;
     }
     let v = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok().map(|b| b as f32 / 255.0);
@@ -178,6 +179,14 @@ mod tests {
         assert!(!(0.05..0.95).contains(&h), "red hue, got {h}");
         assert!(s >= 0.55 && (l - 0.6).abs() < 0.01);
         assert!(to_hsl(c.bg).2 < 0.1 && to_hsl(c.text).2 > 0.85);
+    }
+
+    #[test]
+    fn bad_hex_is_rejected_without_panicking() {
+        assert!(parse_hex("#1é2345").is_none());
+        assert!(parse_hex("#12").is_none());
+        assert!(parse_hex("#zz0000").is_none());
+        assert!(parse_hex("#4d8eff").is_some());
     }
 
     #[test]
