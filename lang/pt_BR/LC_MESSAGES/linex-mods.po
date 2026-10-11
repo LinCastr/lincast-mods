@@ -135,7 +135,7 @@ msgstr "Buscar mod"
 msgid "Active."
 msgstr "Ativo."
 
-msgid "Enable"
+msgid "Turn on"
 msgstr "Ativar"
 
 msgid "Delete key"
@@ -152,3 +152,24 @@ msgstr "IDIOMA"
 
 msgid "Automatic"
 msgstr "Automático"
+
+msgid "Disable"
+msgstr "Desligar"
+
+msgid "Enable"
+msgstr "Ligar"
+
+msgid "Show in folder"
+msgstr "Mostrar na pasta"
+
+msgid "Open mod page"
+msgstr "Abrir página do mod"
+
+msgid "Properties"
+msgstr "Propriedades"
+
+msgid "Move to trash"
+msgstr "Mover para a Lixeira"
+
+msgid "Check for updates"
+msgstr "Buscar atualizações"

@@ -387,19 +387,103 @@ global Cols {
     out property <length> toggle: 40px;
 }
 
+export struct PropRow {
+    label: string,
+    value: string,
+}
+
+component MenuItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> danger;
+    callback clicked;
+    height: 30px;
+    border-radius: 4px;
+    background: ta.has-hover ? #ffffff10 : transparent;
+    Text {
+        x: 10px;
+        text: root.text;
+        color: root.danger ? Theme.error : Theme.text;
+        font-size: 12px;
+        vertical-alignment: center;
+        height: parent.height;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 component ModRow inherits Rectangle {
     in property <ModItem> item;
     in property <bool> show-author;
     callback toggled(bool);
     callback remove();
     callback open-url(string);
+    callback open-folder();
+    callback properties();
+    property <length> menu-x;
+    property <length> menu-y;
     // Primeiro clique em "Remover" pede confirmação; some sozinho em 3 s.
     property <bool> confirm;
     property <bool> hovered: ta.has-hover || rm.has-hover;
     height: 44px;
     border-radius: Theme.radius;
     background: hovered ? #ffffff06 : transparent;
-    ta := TouchArea { }
+    // Clique direito: menu do mod.
+    ta := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down && e.button == PointerEventButton.right {
+                root.menu-x = self.mouse-x;
+                root.menu-y = self.mouse-y;
+                menu.show();
+            }
+        }
+    }
+    menu := PopupWindow {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 210px;
+        Rectangle {
+            border-radius: 8px;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 18px;
+            drop-shadow-color: #00000070;
+            VerticalLayout {
+                padding: 5px;
+                spacing: 1px;
+                MenuItem {
+                    text: root.item.enabled ? @tr("Disable") : @tr("Enable");
+                    clicked => { root.toggled(!root.item.enabled); }
+                }
+                MenuItem {
+                    text: @tr("Show in folder");
+                    clicked => { root.open-folder(); }
+                }
+                if root.item.page != "": MenuItem {
+                    text: @tr("Open mod page");
+                    clicked => { root.open-url(root.item.page); }
+                }
+                MenuItem {
+                    text: @tr("Properties");
+                    clicked => { root.properties(); }
+                }
+                Rectangle {
+                    height: 9px;
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.line;
+                    }
+                }
+                MenuItem {
+                    text: @tr("Move to trash");
+                    danger: true;
+                    clicked => { root.remove(); }
+                }
+            }
+        }
+    }
     Timer {
         interval: 3s;
         running: root.confirm;
@@ -624,7 +708,7 @@ component SettingsPage inherits VerticalLayout {
     if !root.handler-ok: HorizontalLayout {
         alignment: start;
         Button {
-            text: @tr("Enable");
+            text: @tr("Turn on");
             clicked => { root.register-handler(); }
         }
     }
@@ -798,6 +882,11 @@ export component AppWindow inherits Window {
     in property <string> progress;
     in-out property <bool> panel-open;
     in property <bool> drop-hover;
+    in-out property <bool> sort-desc;
+    in property <bool> checking;
+    in-out property <bool> props-open;
+    in property <string> props-title;
+    in property <[PropRow]> props;
     in property <bool> busy;
     in-out property <string> filter;
     in-out property <int> filter-mode;
@@ -831,6 +920,9 @@ export component AppWindow inherits Window {
     callback open-key-page();
     callback theme-changed(int);
     callback lang-changed(int);
+    callback open-mod-folder(string);
+    callback show-properties(string);
+    callback check-updates();
     callback nxm-received(string);
     callback open-panel();
     callback clear-notices();
@@ -1045,6 +1137,13 @@ export component AppWindow inherits Window {
                     current <=> root.filter-mode;
                     changed => { root.filter-changed(root.filter); }
                 }
+                Button {
+                    height: 30px;
+                    text: root.checking ? @tr("Checking…") : @tr("Check for updates");
+                    icon: @image-url("icons/refresh.svg");
+                    enabled: !root.checking;
+                    clicked => { root.check-updates(); }
+                }
                 Rectangle { }
                 Text {
                     text: root.counts;
@@ -1060,7 +1159,23 @@ export component AppWindow inherits Window {
                 padding-right: 40px;
                 spacing: 16px;
                 height: 24px;
-                GroupLabel { text: "MOD"; vertical-alignment: center; }
+                Rectangle {
+                    width: sort-label.preferred-width;
+                    horizontal-stretch: 0;
+                    sort-label := GroupLabel {
+                        text: root.sort-desc ? "MOD  ↓" : "MOD  ↑";
+                        color: sort-ta.has-hover ? Theme.text : Theme.faint;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+                    sort-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.sort-desc = !root.sort-desc;
+                            root.filter-changed(root.filter);
+                        }
+                    }
+                }
                 Rectangle { }
                 if root.show-author: GroupLabel { width: Cols.author; text: @tr("AUTHOR"); vertical-alignment: center; }
                 GroupLabel { width: Cols.version; text: @tr("VERSION"); vertical-alignment: center; }
@@ -1076,9 +1191,52 @@ export component AppWindow inherits Window {
                 }
             }
 
-            ScrollView {
-                VerticalLayout {
-                    padding-left: 28px;
+            // Lista com a barra de rolagem à esquerda (perto dos nomes, onde o olho já está).
+            HorizontalLayout {
+                Rectangle {
+                    width: 28px;
+                    track := Rectangle {
+                        property <length> max-scroll: flick.content-height - flick.height;
+                        x: 10px;
+                        y: 6px;
+                        width: drag.has-hover || drag.pressed ? 8px : 6px;
+                        animate width { duration: 100ms; }
+                        height: parent.height - 12px;
+                        visible: self.max-scroll > 0;
+                        border-radius: self.width / 2;
+                        background: drag.has-hover || drag.pressed ? Theme.line : Theme.line.transparentize(0.5);
+                        thumb := Rectangle {
+                            width: parent.width;
+                            height: max(40px, parent.height * flick.height / max(flick.content-height, 1px));
+                            y: track.max-scroll > 0 ? (-flick.content-y / track.max-scroll) * (parent.height - self.height) : 0;
+                            border-radius: self.width / 2;
+                            background: drag.pressed ? Theme.dim : (drag.has-hover ? Theme.faint.brighter(0.4) : Theme.faint);
+                        }
+                        drag := TouchArea {
+                            mouse-cursor: pointer;
+                            function jump() {
+                                flick.content-y = -max(0, min(1, (self.mouse-y - thumb.height / 2) / max(1px, track.height - thumb.height))) * track.max-scroll;
+                            }
+                            pointer-event(e) => {
+                                if e.kind == PointerEventKind.down && e.button == PointerEventButton.left {
+                                    self.jump();
+                                }
+                            }
+                            moved => {
+                                if self.pressed { self.jump(); }
+                            }
+                            scroll-event(e) => {
+                                flick.content-y = max(-track.max-scroll, min(0, flick.content-y + e.delta-y));
+                                accept
+                            }
+                        }
+                    }
+                }
+                flick := Flickable {
+                    content-height: list.preferred-height;
+                    content-width: self.width;
+                    list := VerticalLayout {
+                    width: flick.width;
                     padding-right: 28px;
                     padding-top: 4px;
                     padding-bottom: 16px;
@@ -1088,6 +1246,8 @@ export component AppWindow inherits Window {
                         toggled(v) => { root.toggle-mod(m.id, v); }
                         remove => { root.remove-mod(m.id); }
                         open-url(u) => { root.open-url(u); }
+                        open-folder => { root.open-mod-folder(m.id); }
+                        properties => { root.show-properties(m.id); }
                     }
                     if root.mods.length == 0 && root.current >= 0: Text {
                         text: root.filter != "" ? @tr("No mod with that name.")
@@ -1097,6 +1257,62 @@ export component AppWindow inherits Window {
                         horizontal-alignment: center;
                         height: 100px;
                         vertical-alignment: center;
+                    }
+                    }
+                }
+            }
+        }
+    }
+
+    // Propriedades de um mod (clique direito → Propriedades).
+    if root.props-open: Rectangle {
+        background: #00000070;
+        TouchArea {
+            clicked => { root.props-open = false; }
+        }
+        Rectangle {
+            width: min(560px, parent.width - 80px);
+            height: min(props-lay.preferred-height, parent.height - 80px);
+            border-radius: 12px;
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.line;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: #00000080;
+            clip: true;
+            TouchArea { }
+            props-lay := VerticalLayout {
+                padding: 22px;
+                spacing: 14px;
+                HorizontalLayout {
+                    Text {
+                        text: root.props-title;
+                        color: Theme.text;
+                        font-size: 17px;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "×";
+                        color: px.has-hover ? Theme.text : Theme.faint;
+                        font-size: 20px;
+                        horizontal-stretch: 0;
+                        vertical-alignment: center;
+                        px := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.props-open = false; }
+                        }
+                    }
+                }
+                for r in root.props: VerticalLayout {
+                    spacing: 2px;
+                    GroupLabel { text: r.label; }
+                    Text {
+                        text: r.value;
+                        color: Theme.text;
+                        font-size: 13px;
+                        wrap: word-wrap;
                     }
                 }
             }

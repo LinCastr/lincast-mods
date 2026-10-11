@@ -70,6 +70,16 @@ fn humanize(stem: &str) -> String {
     out
 }
 
+/// The mod's manifest.json (SMAPI or Thunderstore), if it has one.
+pub fn manifest(path: &Path) -> Option<serde_json::Value> {
+    if path.is_dir() { find_manifest(path, 2) } else { None }
+}
+
+/// Where the mod is now (enabled or disabled location).
+pub fn mod_path(game: &Game, id: &str) -> Option<std::path::PathBuf> {
+    [game.mods_dir().join(id), game.disabled_dir().join(id)].into_iter().find(|p| p.exists())
+}
+
 /// Arquivos que acompanham mods mas não são mods.
 fn is_junk(name: &str) -> bool {
     let n = name.to_lowercase();
@@ -146,7 +156,7 @@ pub fn lenient_json(src: &str) -> Option<serde_json::Value> {
     serde_json::from_str(&clean).ok()
 }
 
-fn json_field(v: &serde_json::Value, key: &str) -> Option<String> {
+pub fn json_field(v: &serde_json::Value, key: &str) -> Option<String> {
     v.as_object()?
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case(key))

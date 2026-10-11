@@ -102,7 +102,10 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
         ui.set_mods(ModelRc::default());
         return;
     };
-    let all = mods::list(g);
+    let mut all = mods::list(g);
+    if ui.get_sort_desc() {
+        all.reverse();
+    }
     let total = all.len();
     let on = all.iter().filter(|m| m.enabled).count();
     ui.set_show_author(all.iter().any(|m| m.author.is_some()));
@@ -172,7 +175,7 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     ui.set_filter(SharedString::new());
     ui.set_filter_mode(0);
     refresh_mods(ui, state);
-    check_updates(ui, state, appid);
+    check_updates(ui, state, appid, false);
     let mut cfg = config::load();
     if cfg.last_game != Some(appid) {
         cfg.last_game = Some(appid);
@@ -186,9 +189,14 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
 /// thread: local icon.png thumbnails first, then Nexus version and picture (cached
 /// for 6 h; without an API key only the cache is used). Ends by reporting mods with
 /// a newer version.
-fn check_updates(ui: &AppWindow, state: &mut State, appid: u32) {
-    if !state.checked.insert(appid) {
+fn check_updates(ui: &AppWindow, state: &mut State, appid: u32, force: bool) {
+    if !state.checked.insert(appid) && !force {
         return;
+    }
+    if force {
+        state.updates.retain(|(a, _), _| *a != appid);
+        ui.set_checking(true);
+        set_progress(ui, tr!("Checking for updates…", "Buscando atualizações…"));
     }
     let Some(g) = state.game() else { return };
     let list = mods::list(g);
@@ -205,16 +213,29 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32) {
         if locals.iter().filter(|p| crate::meta::ensure_local_icon(p).is_some()).count() > 0 {
             ping(&weak, "{}".into());
         }
+        let total = remotes.len();
+        let key = nexus::load_key();
+        if force && (remotes.is_empty() || key.is_none()) {
+            let msg = if key.is_none() {
+                tr!("Add your Nexus API key in Settings to check for updates.", "Coloque a sua chave da API do Nexus em Configurações para buscar atualizações.")
+            } else {
+                tr!("None of these mods has a Nexus link to check.", "Nenhum destes mods tem link do Nexus para conferir.")
+            };
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_checking(false);
+                set_msg(&ui, msg, key.is_none());
+            });
+            return;
+        }
         if remotes.is_empty() {
             return;
         }
-        let key = nexus::load_key();
         let mut info = crate::meta::load_info();
         let mut found = serde_json::Map::new();
         let mut fresh_icons = 0;
         for (domain, id, local) in &remotes {
             let k = crate::meta::info_key(domain, *id);
-            let cached = info.get(&k).filter(|i| crate::meta::is_fresh(i)).cloned();
+            let cached = info.get(&k).filter(|i| !force && crate::meta::is_fresh(i)).cloned();
             let i = match (cached, &key) {
                 (Some(i), _) => i,
                 (None, Some(key)) => match nexus::mod_info(domain, *id, key) {
@@ -250,8 +271,110 @@ fn check_updates(ui: &AppWindow, state: &mut State, appid: u32) {
             }
         }
         crate::meta::save_info(&info);
+        let n = found.len();
         ping(&weak, serde_json::Value::Object(found).to_string());
+        if force {
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_checking(false);
+                if n == 0 {
+                    set_msg(&ui, tr!("All {total} mods linked to the Nexus are up to date.", "Os {total} mods ligados ao Nexus estão atualizados."), false);
+                }
+            });
+        }
     });
+}
+
+/// "2026-10-11" from a Unix time (UTC), without pulling a date crate.
+fn date(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn size_of(p: &std::path::Path) -> (u64, usize) {
+    if p.is_file() {
+        return (std::fs::metadata(p).map(|m| m.len()).unwrap_or(0), 1);
+    }
+    let mut total = (0, 0);
+    if let Ok(rd) = std::fs::read_dir(p) {
+        for e in rd.flatten() {
+            let (b, n) = size_of(&e.path());
+            total.0 += b;
+            total.1 += n;
+        }
+    }
+    total
+}
+
+fn human_size(b: u64) -> String {
+    match b {
+        0..1024 => format!("{b} B"),
+        1024..1_048_576 => format!("{:.0} KB", b as f64 / 1024.0),
+        _ => format!("{:.1} MB", b as f64 / 1_048_576.0),
+    }
+}
+
+/// Rows of the Properties dialog.
+fn properties(g: &Game, id: &str) -> Option<(String, Vec<PropRow>)> {
+    let m = mods::list(g).into_iter().find(|m| m.id == id)?;
+    let path = mods::mod_path(g, id)?;
+    let mut rows = Vec::new();
+    let mut add = |label: String, value: String| {
+        if !value.is_empty() {
+            rows.push(PropRow { label: label.to_uppercase().into(), value: value.into() });
+        }
+    };
+    add(tr!("Status", "Estado"), if m.enabled { tr!("Enabled", "Ligado") } else { tr!("Disabled", "Desligado") });
+    add(tr!("Version", "Versão"), m.version.clone().unwrap_or_default());
+    add(tr!("Author", "Autor"), m.author.clone().unwrap_or_default());
+    if let Some(man) = mods::manifest(&path) {
+        add(tr!("Description", "Descrição"), mods::json_field(&man, "Description").unwrap_or_default());
+        add("ID".into(), mods::json_field(&man, "UniqueID").unwrap_or_default());
+    }
+    let (bytes, files) = size_of(&path);
+    add(tr!("Size", "Tamanho"), tr!("{} in {files} files", "{} em {files} arquivos", human_size(bytes)));
+    add(tr!("Location", "Local"), path.display().to_string());
+    let recs = crate::records::load(g.steam.appid);
+    if let Some(r) = recs.owner(&format!("{}/{}", g.loader.mods_dir(), id)).map(|i| &recs.mods[i]) {
+        add(tr!("Installed on", "Instalado em"), date(r.installed_at));
+        add(tr!("From file", "Do arquivo"), r.archive.clone());
+        if r.files.len() > 1 {
+            add(tr!("Also installed", "Também instalou"), r.files.iter().skip(1).cloned().collect::<Vec<_>>().join("\n"));
+        }
+    }
+    if let Some((d, nid)) = &m.nexus_key {
+        add("Nexus".into(), nexus::mod_page(d, *nid).replace("?tab=files", ""));
+    }
+    Some((m.name, rows))
+}
+
+/// Selects the file in the file manager (FileManager1 over D-Bus, which Dolphin,
+/// Nautilus and others implement); falls back to opening the folder.
+fn show_in_folder(p: &std::path::Path) {
+    let uri = format!("file://{}", p.display());
+    let ok = Command::new("dbus-send")
+        .args([
+            "--session",
+            "--dest=org.freedesktop.FileManager1",
+            "--type=method_call",
+            "/org/freedesktop/FileManager1",
+            "org.freedesktop.FileManager1.ShowItems",
+            &format!("array:string:{uri}"),
+            "string:",
+        ])
+        .status()
+        .is_ok_and(|s| s.success());
+    if !ok {
+        open(&p.parent().unwrap_or(p).to_string_lossy());
+    }
 }
 
 fn color(c: theme::Rgb) -> slint::Color {
@@ -540,6 +663,13 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
             set_msg(ui, part.to_string(), i == 1);
         }
     }
+    if let Ok(id) = std::env::var("LINEX_PROPS") {
+        ui.invoke_show_properties(id.into());
+    }
+    if std::env::var("LINEX_SORT_DESC").as_deref() == Ok("1") {
+        ui.set_sort_desc(true);
+        ui.invoke_filter_changed(ui.get_filter());
+    }
     if std::env::var("LINEX_PANEL").as_deref() == Ok("1") {
         ui.set_panel_open(true);
         ui.invoke_open_panel();
@@ -753,6 +883,33 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     });
     ui.on_dismiss_toast(remove_toast);
+    {
+        let state = state.clone();
+        ui.on_open_mod_folder(move |id| {
+            if let Some(p) = state.borrow().game().and_then(|g| mods::mod_path(g, &id)) {
+                show_in_folder(&p);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_show_properties(move |id| {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some((title, rows)) = state.borrow().game().and_then(|g| properties(g, &id)) else { return };
+            ui.set_props_title(title.into());
+            ui.set_props(ModelRc::new(VecModel::from(rows)));
+            ui.set_props_open(true);
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_check_updates(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            let Some(appid) = st.game().map(|g| g.steam.appid) else { return };
+            check_updates(&ui, &mut st, appid, true);
+        });
+    }
     {
         let weak = ui.as_weak();
         ui.on_show_add_game(move || {
