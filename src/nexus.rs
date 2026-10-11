@@ -44,6 +44,15 @@ impl NxmLink {
                 _ => {}
             }
         }
+        // Everything here goes into API URLs: only plain URL-safe values, so a crafted
+        // link can't add query parameters or walk the path ("..").
+        let safe = |v: &str| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !safe(domain) || !domain.chars().any(|c| c.is_ascii_alphanumeric()) {
+            bail!("{}", tr!("invalid game in the nxm:// link", "jogo inválido no link nxm://"));
+        }
+        if key.as_deref().is_some_and(|k| !safe(k)) || expires.as_deref().is_some_and(|e| !e.chars().all(|c| c.is_ascii_digit())) {
+            bail!("{}", tr!("invalid key in the nxm:// link", "chave inválida no link nxm://"));
+        }
         Ok(NxmLink {
             domain: domain.to_lowercase(),
             mod_id: mod_id.parse().context(tr!("invalid mod ID", "ID do mod inválido"))?,
@@ -99,6 +108,9 @@ pub fn save_key(key: &str) -> Result<String> {
         .truncate(true)
         .mode(0o600)
         .open(&p)?;
+    // `mode` only applies when the file is created; an older file keeps its permissions.
+    use std::os::unix::fs::PermissionsExt;
+    f.set_permissions(fs::Permissions::from_mode(0o600))?;
     f.write_all(key.as_bytes())?;
     Ok(tr!("in {} (system keyring unavailable)", "em {} (chaveiro do sistema indisponível)", p.display()))
 }
@@ -135,8 +147,27 @@ fn get_json(path_and_query: &str, key: &str) -> Result<serde_json::Value> {
         }
         Err(ureq::Error::Status(404, _)) => bail!("{}", tr!("mod or file not found on the Nexus", "mod ou arquivo não encontrado no Nexus")),
         Err(ureq::Error::Status(429, _)) => bail!("{}", tr!("Nexus request limit reached; try again later", "limite de pedidos do Nexus atingido; tente mais tarde")),
-        Err(e) => Err(anyhow!(e).context(tr!("couldn't reach the Nexus", "falha ao falar com o Nexus"))),
+        Err(e) => Err(anyhow!(redact(&e.to_string())).context(tr!("couldn't reach the Nexus", "falha ao falar com o Nexus"))),
     }
+}
+
+/// ureq errors include the URL, and the download URLs carry the one-time key and signed
+/// tokens: drop every query string before the message reaches the screen or the log.
+fn redact(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut in_query = false;
+    for c in msg.chars() {
+        if c == '?' {
+            in_query = true;
+            out.push_str("?…");
+        } else if in_query && (c.is_whitespace() || c == ')' || c == '"' || c == '\'' || c == ',' || c == ':') {
+            in_query = false;
+        }
+        if !in_query {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Validates the key: returns the user name and whether it is premium.
@@ -221,7 +252,11 @@ pub fn download(link: &NxmLink, key: &str, mut progress: impl FnMut(u64, u64)) -
     let path = dir.join(&file_name);
     let part = dir.join(format!("{file_name}.part"));
 
-    let resp = agent().get(&uri).call().context(tr!("couldn't download the file", "falha ao baixar o arquivo"))?;
+    let resp = agent()
+        .get(&uri)
+        .call()
+        .map_err(|e| anyhow!(redact(&e.to_string())))
+        .context(tr!("couldn't download the file", "falha ao baixar o arquivo"))?;
     let total: u64 = resp.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
     let mut reader = resp.into_reader();
     let mut out = fs::File::create(&part)?;
@@ -275,5 +310,16 @@ mod tests {
         assert!(!l.redacted().contains("abc"));
         assert!(NxmLink::parse("nxm://x/collections/abc").is_err());
         assert!(NxmLink::parse("https://x").is_err());
+        assert!(NxmLink::parse("nxm://../mods/1/files/2").is_err());
+        assert!(NxmLink::parse("nxm://x/mods/1/files/2?key=a%26b&expires=1").is_err());
+        assert!(NxmLink::parse("nxm://x/mods/1/files/2?key=abc&expires=1x").is_err());
+        assert!(NxmLink::parse("nxm://stardewvalley/mods/1/files/2").is_ok());
+    }
+
+    #[test]
+    fn errors_never_show_the_query() {
+        let m = redact("https://api.nexusmods.com/v1/games/x/mods/1/files/2/download_link.json?key=SECRET&expires=9: Connection failed");
+        assert!(!m.contains("SECRET") && m.ends_with(": Connection failed"), "{m}");
+        assert_eq!(redact("no url here"), "no url here");
     }
 }
