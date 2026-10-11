@@ -178,10 +178,20 @@ fn install_smapi(game: &Game, root: &Path, stem: &str) -> Result<Vec<String>> {
     let mods_dir = game.mods_dir();
     let mut done = Vec::new();
     for (src, name) in units {
+        if !is_plain_name(&name) {
+            bail!("{}", tr!("invalid mod folder name: {name}", "nome de pasta de mod inválido: {name}"));
+        }
         replace_dir(&src, &mods_dir.join(&name), &game.disabled_dir().join(&name))?;
         done.push(format!("{}/{name}", game.loader.mods_dir()));
     }
     Ok(done)
+}
+
+/// A single path component that stays inside its parent: not empty, ".", ".." or
+/// anything with a slash.
+pub fn is_plain_name(name: &str) -> bool {
+    let n = name.trim();
+    !n.is_empty() && n != "." && n != ".." && !n.contains('/') && n == name
 }
 
 fn name_of(p: &Path) -> String {
@@ -337,6 +347,11 @@ pub fn install_archive(
     let tmp = TempDir::new()?;
     extract(archive, &tmp.0)?;
     let stem = clean_stem(archive);
+    // The stem becomes a folder name under Mods/: "..zip" would make it "." or "..",
+    // and replacing that folder deletes the mods folder or the whole game.
+    if !is_plain_name(&stem) {
+        bail!("{}", tr!("invalid archive name: {}", "nome de arquivo inválido: {}", archive.display()));
+    }
     let warning = dll_loader(&tmp.0).filter(|l| *l != game.loader).map(|l| {
         tr!(
             "this mod was made for {}, but the game uses {}: it won't load. Look for the {} version on the mod page.",

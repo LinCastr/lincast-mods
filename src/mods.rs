@@ -321,6 +321,15 @@ pub fn uninstall(game: &Game, id: &str) -> Result<String> {
         ),
         None => (id.to_string(), vec![unit.clone()]),
     };
+    // Record paths are trusted only when they stay inside the game folder: relative,
+    // with no "..", "." or empty part (a broken or edited record must not trash the game).
+    let targets: Vec<String> = targets
+        .into_iter()
+        .filter(|t| {
+            let p = Path::new(t);
+            !t.is_empty() && p.is_relative() && t.split('/').all(|c| !c.is_empty() && c != "." && c != "..")
+        })
+        .collect();
     let dir = game.dir();
     let disabled_root = dir.join(".linex-disabled");
     let mut trashed = Vec::new();

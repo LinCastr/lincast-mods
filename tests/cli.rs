@@ -215,3 +215,34 @@ fn bad_input_is_rejected() {
     let (ok, text) = h.run(&["install", "413150", not_a_mod.to_str().unwrap()]);
     assert!(!ok && text.contains("manifest.json"), "{text}");
 }
+
+#[test]
+fn archive_named_dots_does_not_replace_the_game_folder() {
+    let h = Home::new("dots");
+    let game = h.game(413150, "Stardew Valley", &["StardewModdingAPI.dll", "StardewValley.exe", "Mods/OtherMod/manifest.json"]);
+    for name in ["..zip", "...zip", ". -123-1-0-1700000000.zip"] {
+        let zip = h.zip(name, &[("manifest.json", r#"{"Name":"X"}"#)]);
+        let (ok, text) = h.run(&["install", "413150", zip.to_str().unwrap()]);
+        assert!(!ok, "{name} should be rejected:\n{text}");
+        assert!(game.join("Mods/OtherMod/manifest.json").is_file(), "{name} deleted the other mods");
+        assert!(game.join("StardewValley.exe").is_file(), "{name} deleted the game");
+    }
+}
+
+#[test]
+fn remove_ignores_record_paths_outside_the_game() {
+    let h = Home::new("record-escape");
+    let game = h.game(413150, "Stardew Valley", &["StardewModdingAPI.dll", "StardewValley.exe", "Mods/Bad/manifest.json"]);
+    // The absolute path points inside the test's own HOME, never at a real system
+    // folder: if the guard ever regresses, this test must not trash anything real.
+    let outside = h.0.join("outside");
+    fs::write(&outside, "keep").unwrap();
+    let files = serde_json::json!(["Mods/Bad", "..", "../Stardew Valley", outside, ""]);
+    let rec = serde_json::json!({"mods": [{"name": "Bad", "files": files, "archive": "bad.zip"}]});
+    fs::create_dir_all(h.0.join(".local/share/linex-mods")).unwrap();
+    fs::write(h.0.join(".local/share/linex-mods/413150.json"), rec.to_string()).unwrap();
+    h.ok(&["remove", "413150", "Bad"]);
+    assert!(!game.join("Mods/Bad").exists());
+    assert!(game.join("StardewValley.exe").is_file(), "the game folder went to the trash");
+    assert!(outside.is_file(), "a file outside the game went to the trash");
+}
