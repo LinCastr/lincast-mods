@@ -653,6 +653,7 @@ export component AppWindow inherits Window {
     in property <int> unseen;
     in property <string> progress;
     in-out property <bool> panel-open;
+    in property <bool> drop-hover;
     in property <bool> busy;
     in-out property <string> filter;
     in-out property <int> filter-mode;
@@ -924,6 +925,37 @@ export component AppWindow inherits Window {
                         height: 100px;
                         vertical-alignment: center;
                     }
+                }
+            }
+        }
+    }
+
+    // Arquivo sendo arrastado sobre a janela.
+    if root.drop-hover: Rectangle {
+        background: Theme.bg.transparentize(0.12);
+        Rectangle {
+            x: 20px;
+            y: 20px;
+            width: parent.width - 40px;
+            height: parent.height - 40px;
+            border-radius: 14px;
+            border-width: 2px;
+            border-color: Theme.accent;
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: root.page == 0 && root.game-name != "" ? "Solte para instalar em " + root.game-name : "Abra um jogo para instalar";
+                    color: Theme.text;
+                    font-size: 22px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Arquivos .zip, .7z ou .rar";
+                    color: Theme.dim;
+                    font-size: 13px;
+                    horizontal-alignment: center;
                 }
             }
         }

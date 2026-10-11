@@ -58,14 +58,19 @@ fn status_of(g: &Game) -> (String, bool, String) {
 /// Copia para a área de transferência (wl-copy no Wayland, xclip/xsel no X11).
 fn copy_text(text: &str) -> bool {
     use std::io::Write;
-    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some() || WAYLAND_DISPLAY.get().is_some();
     let cmds: &[(&str, &[&str])] = if wayland {
         &[("wl-copy", &[]), ("xclip", &["-selection", "clipboard"])]
     } else {
         &[("xclip", &["-selection", "clipboard"]), ("xsel", &["--clipboard", "--input"])]
     };
     for (cmd, args) in cmds {
-        let child = Command::new(cmd).args(*args).stdin(std::process::Stdio::piped()).spawn();
+        let mut command = Command::new(cmd);
+        command.args(*args).stdin(std::process::Stdio::piped());
+        if let Some(w) = WAYLAND_DISPLAY.get() {
+            command.env("WAYLAND_DISPLAY", w);
+        }
+        let child = command.spawn();
         if let Ok(mut c) = child {
             if let Some(mut stdin) = c.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
@@ -485,6 +490,86 @@ fn snapshot_mode(ui: &AppWindow, state: &Rc<RefCell<State>>) {
     });
 }
 
+/// WAYLAND_DISPLAY original, quando o app abre pelo XWayland (ver `prefer_x11`).
+static WAYLAND_DISPLAY: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
+
+/// Arrastar arquivos para a janela só funciona no X11: o winit (camada de janelas
+/// do Slint) ainda não implementa arrastar e soltar no Wayland. Com o XWayland
+/// disponível, o app abre por ele (LINEX_WAYLAND=1 força o Wayland). Tem que rodar
+/// antes de qualquer thread.
+pub fn prefer_x11() {
+    if std::env::var_os("LINEX_WAYLAND").is_some() || std::env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    if let Some(w) = std::env::var_os("WAYLAND_DISPLAY") {
+        let _ = WAYLAND_DISPLAY.set(w);
+        // Sem Xft.dpi, o winit calcula a escala pelo tamanho físico do monitor e a
+        // janela abria uns 33% maior que no Wayland. Com Xft.dpi (o KDE define quando
+        // há escala), vale o que o sistema escolheu.
+        let xft = Command::new("xrdb")
+            .arg("-query")
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("Xft.dpi"));
+        // SAFETY: chamado no início do main, com uma thread só.
+        unsafe {
+            std::env::remove_var("WAYLAND_DISPLAY");
+            if !xft && std::env::var_os("WINIT_X11_SCALE_FACTOR").is_none() {
+                std::env::set_var("WINIT_X11_SCALE_FACTOR", "1");
+            }
+        }
+    }
+}
+
+/// Uma instalação por vez: arrastar vários arquivos dispara várias threads, e o
+/// registro de cada jogo é lido e regravado inteiro.
+static INSTALL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn is_archive(p: &std::path::Path) -> bool {
+    p.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .is_some_and(|e| matches!(e.as_str(), "zip" | "7z" | "rar"))
+}
+
+/// Instala arquivos soltos na janela no jogo aberto.
+fn install_files(ui: &AppWindow, state: &State, files: Vec<PathBuf>) {
+    if ui.get_page() != 0 {
+        return set_msg(ui, "Abra um jogo antes de soltar o arquivo.", true);
+    }
+    let Some(game) = state.game().cloned() else {
+        return set_msg(ui, "Abra um jogo antes de soltar o arquivo.", true);
+    };
+    let (ok, bad): (Vec<_>, Vec<_>) = files.into_iter().partition(|f| is_archive(f));
+    for b in bad {
+        set_msg(ui, format!("{}: não é .zip, .7z nem .rar.", b.file_name().unwrap_or_default().to_string_lossy()), true);
+    }
+    if ok.is_empty() {
+        return;
+    }
+    set_progress(ui, format!("Instalando em {}…", game.steam.name));
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let _lock = INSTALL_LOCK.lock();
+        let mut results = Vec::new();
+        for f in &ok {
+            let name = install::clean_stem(f);
+            results.push(match install::install_archive(&game, f, None, None) {
+                Ok(rec) => match rec.warning {
+                    Some(w) => (format!("{} instalado, mas {w}", rec.name), true),
+                    None => (format!("Instalado: {}", rec.name), false),
+                },
+                Err(e) => (format!("{name}: {e:#}"), true),
+            });
+        }
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_progress(SharedString::new());
+            for (m, e) in results {
+                set_msg(&ui, m, e);
+            }
+            ui.invoke_filter_changed(ui.get_filter());
+        });
+    });
+}
+
 pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
     desktop::refresh_desktop_file();
     let ui = AppWindow::new()?;
@@ -527,6 +612,35 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         });
     });
     ui.on_dismiss_toast(remove_toast);
+    {
+        use slint::winit_030::{EventResult, WinitWindowAccessor, winit::event::WindowEvent};
+        let (weak, state) = (ui.as_weak(), state.clone());
+        // O X11 manda um evento por arquivo; junta os que chegam juntos.
+        let pending: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
+        ui.window().on_winit_window_event(move |_, ev| {
+            let Some(ui) = weak.upgrade() else { return EventResult::Propagate };
+            match ev {
+                WindowEvent::HoveredFile(_) => ui.set_drop_hover(true),
+                WindowEvent::HoveredFileCancelled => ui.set_drop_hover(false),
+                WindowEvent::DroppedFile(p) => {
+                    ui.set_drop_hover(false);
+                    let first = pending.borrow().is_empty();
+                    pending.borrow_mut().push(p.clone());
+                    if first {
+                        let (weak, state, pending) = (weak.clone(), state.clone(), pending.clone());
+                        slint::Timer::single_shot(std::time::Duration::from_millis(150), move || {
+                            let files = std::mem::take(&mut *pending.borrow_mut());
+                            if let Some(ui) = weak.upgrade() {
+                                install_files(&ui, &state.borrow(), files);
+                            }
+                        });
+                    }
+                }
+                _ => return EventResult::Propagate,
+            }
+            EventResult::Propagate
+        });
+    }
     ui.set_games(ModelRc::new(VecModel::from(game_items(&state.borrow().games))));
 
     {
@@ -598,6 +712,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             let weak = weak.clone();
             // O seletor de arquivos e a extração rodam fora da thread da janela.
             std::thread::spawn(move || {
+                let _lock = INSTALL_LOCK.lock();
                 let files = rfd::FileDialog::new()
                     .set_title("Escolha os arquivos do mod")
                     .add_filter("Arquivos de mod", &["zip", "7z", "rar"])

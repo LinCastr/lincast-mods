@@ -73,6 +73,9 @@ fn run(args: &[String]) -> Result<()> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() || args[0].starts_with("nxm://") {
+        gui::prefer_x11();
+    }
     let result = match args.as_slice() {
         [] => gui::run(None),
         // Clique em "Mod Manager Download": repassa para a janela aberta, ou abre uma.
