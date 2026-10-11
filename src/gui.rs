@@ -24,6 +24,10 @@ struct State {
     browse_gen: u64,
     /// What the confirmation dialog does on "OK".
     pending: Option<browse_tab::Pending>,
+    /// Missing dependencies of the open game's mods (mod id → them), and the mods seen
+    /// at the last check (a new one with missing dependencies gets a prompt).
+    deps: std::collections::HashMap<String, Vec<crate::deps::Missing>>,
+    deps_seen: Option<(u32, std::collections::HashSet<String>)>,
 }
 
 impl State {
@@ -133,6 +137,7 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
             _ => true,
         })
         .map(|m| {
+            let missing = state.deps.get(&m.id).map(|d| d.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
             let update = update_key(&m).and_then(|k| state.updates.get(&(g.steam.appid, k))).cloned().unwrap_or_default();
             let icon_path = m
                 .icon_src
@@ -160,6 +165,7 @@ fn refresh_mods(ui: &AppWindow, state: &State) {
                     mods::Source::Thunderstore => 2,
                 },
                 update: update.into(),
+                missing: missing.into(),
                 enabled: m.enabled,
             }
         })
@@ -194,6 +200,8 @@ fn select(ui: &AppWindow, state: &mut State, i: usize) {
     refresh_mods(ui, state);
     check_updates(ui, state, appid, false);
     browse_tab::on_select(ui, state);
+    state.deps.clear();
+    check_deps(ui, state);
     let mut cfg = config::load();
     if cfg.last_game != Some(appid) {
         cfg.last_game = Some(appid);
@@ -652,6 +660,15 @@ fn handle_nxm(ui: &AppWindow, state: &mut State, url: &str) {
         match install::install_archive(&game, &dl.path, Some(dl.mod_name.clone()), Some(dl.source)) {
             Ok(rec) => {
                 let _ = std::fs::remove_file(&dl.path);
+                // Other games: the Nexus lists the mod's requirements. SMAPI mods are
+                // checked from their manifests when the mods folder changes.
+                if game.loader != games::Loader::Smapi
+                    && let Ok(missing) = crate::deps::nexus_missing(&game, link.mod_id)
+                    && !missing.is_empty()
+                {
+                    let (name, json) = (rec.name.clone(), serde_json::to_string(&missing).unwrap_or_default());
+                    let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_deps_prompt(appid, name.into(), json.into()));
+                }
                 match rec.warning.or_else(|| twin_warning(&game, &rec.name, mods::Source::Nexus)) {
                     Some(w) => finish(&weak, tr!("{} installed, but {w}", "{} instalado, mas {w}", rec.name), true),
                     None => finish(&weak, tr!("Installed: {}", "Instalado: {}", rec.name), false),
@@ -728,6 +745,46 @@ fn install_package(ui: &AppWindow, r: crate::thunderstore::PackageRef, known: Op
             Err(e) => finish(&weak, appid, tr!("{}: {e:#}", "{}: {e:#}", r.full_name()), true),
         }
     });
+}
+
+/// Missing dependencies of the open game's mods (SMAPI manifests), off the UI thread.
+fn check_deps(ui: &AppWindow, state: &State) {
+    let Some(game) = state.game().cloned() else { return };
+    if game.loader != games::Loader::Smapi {
+        return;
+    }
+    let weak = ui.as_weak();
+    std::thread::spawn(move || {
+        let found = crate::deps::smapi_missing(&game);
+        let json = serde_json::to_string(&found).unwrap_or_default();
+        let appid = game.steam.appid as i32;
+        let _ = weak.upgrade_in_event_loop(move |ui| ui.invoke_deps_found(appid, json.into()));
+    });
+}
+
+/// Download pages of a mod's missing dependencies (those smapi.io or the Nexus know).
+fn deps_pages(game: &Game, missing: &[crate::deps::Missing]) -> Vec<String> {
+    missing.iter().filter_map(|d| d.nexus_id.map(|id| nexus::mod_page(&game.nexus_domain(), id))).collect()
+}
+
+/// Asks to open the download pages of a just-installed mod's missing dependencies.
+fn prompt_deps(ui: &AppWindow, state: &mut State, mod_name: &str, missing: &[crate::deps::Missing]) {
+    let Some(game) = state.game().cloned() else { return };
+    let names: Vec<&str> = missing.iter().map(|d| d.name.as_str()).collect();
+    let pages = deps_pages(&game, missing);
+    let text = if pages.is_empty() {
+        tr!("It needs {}, which is not installed. Look for it on the mod's page.", "Ele precisa de {}, que não está instalado. Procure na página do mod.", names.join(", "))
+    } else {
+        tr!(
+            "It needs {}, which is not installed. Open the download pages? On each one, click \"Mod Manager Download\".",
+            "Ele precisa de {}, que não está instalado. Abrir as páginas de download? Em cada uma, clique em \"Mod Manager Download\".",
+            names.join(", ")
+        )
+    };
+    if pages.is_empty() {
+        return set_msg(ui, tr!("{mod_name}: {text}", "{mod_name}: {text}"), true);
+    }
+    browse_tab::confirm(ui, state, &tr!("{mod_name} needs other mods", "{mod_name} precisa de outros mods"), &text, &tr!("Open download pages", "Abrir páginas de download"), browse_tab::Pending::OpenPages(pages));
 }
 
 /// Updates Thunderstore packages one after the other (each with its new dependencies).
@@ -1011,6 +1068,8 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
         browse: Vec::new(),
         browse_gen: 0,
         pending: None,
+        deps: Default::default(),
+        deps_seen: None,
     }));
 
     {
@@ -1432,6 +1491,58 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             }
         });
     }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_deps_found(move |appid, json| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            let Some(g) = st.game().filter(|g| g.steam.appid as i32 == appid).cloned() else { return };
+            st.deps = serde_json::from_str(&json).unwrap_or_default();
+            let ids: std::collections::HashSet<String> = mods::list(&g).into_iter().map(|m| m.id).collect();
+            // A mod that appeared since the last check and lacks something: ask now.
+            let fresh: Vec<String> = match &st.deps_seen {
+                Some((a, seen)) if *a == g.steam.appid => ids.iter().filter(|i| !seen.contains(*i) && st.deps.contains_key(*i)).cloned().collect(),
+                _ => Vec::new(),
+            };
+            st.deps_seen = Some((g.steam.appid, ids));
+            refresh_mods(&ui, &st);
+            if let Some(id) = fresh.first() {
+                let missing = st.deps.get(id).cloned().unwrap_or_default();
+                let name = mods::list(&g).into_iter().find(|m| &m.id == id).map(|m| m.name).unwrap_or_else(|| id.clone());
+                prompt_deps(&ui, &mut st, &name, &missing);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_deps_prompt(move |appid, name, json| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            if st.game().is_some_and(|g| g.steam.appid as i32 == appid) {
+                let missing: Vec<crate::deps::Missing> = serde_json::from_str(&json).unwrap_or_default();
+                prompt_deps(&ui, &mut st, &name, &missing);
+            }
+        });
+    }
+    {
+        let (weak, state) = (ui.as_weak(), state.clone());
+        ui.on_get_deps(move |id| {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut st = state.borrow_mut();
+            let Some(g) = st.game().cloned() else { return };
+            let missing = st.deps.get(id.as_str()).cloned().unwrap_or_default();
+            let pages = deps_pages(&g, &missing);
+            if pages.is_empty() {
+                let name = missing.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", ");
+                return set_msg(&ui, tr!("{name}: not found on the Nexus; look for it on the mod's page.", "{name}: não achei no Nexus; procure na página do mod."), true);
+            }
+            for u in &pages {
+                open(u);
+            }
+            set_msg(&ui, tr!("On each page, click \"Mod Manager Download\": they come back here and install.", "Em cada página, clique em \"Mod Manager Download\": eles voltam para cá e instalam."), false);
+            st.pending = None;
+        });
+    }
     ui.on_open_key_page(|| open(nexus::API_KEYS_PAGE));
     ui.on_open_url(|u| open(&u));
     {
@@ -1484,6 +1595,7 @@ pub fn run(initial_nxm: Option<String>) -> anyhow::Result<()> {
             if changed
                 && let Some(ui) = weak.upgrade() {
                 refresh_mods(&ui, &st);
+                check_deps(&ui, &st);
             }
         });
     }

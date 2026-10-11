@@ -50,6 +50,8 @@ export struct ModItem {
     // 0 unknown, 1 Nexus, 2 Thunderstore.
     source: int,
     update: string,
+    // Missing dependencies ("Content Patcher, SpaceCore"), empty when none.
+    missing: string,
     page: string,
     icon: image,
     has-icon: bool,
@@ -443,6 +445,7 @@ component ModRow inherits Rectangle {
     callback open-folder();
     callback properties();
     callback update();
+    callback get-deps();
     property <length> menu-x;
     property <length> menu-y;
     // First click on "Remove" asks for confirmation; it goes away by itself after 3 s.
@@ -482,6 +485,10 @@ component ModRow inherits Rectangle {
                 MenuItem {
                     text: @tr("Show in folder");
                     clicked => { root.open-folder(); }
+                }
+                if root.item.missing != "": MenuItem {
+                    text: @tr("Download missing dependencies");
+                    clicked => { root.get-deps(); }
                 }
                 if root.item.page != "": MenuItem {
                     text: @tr("Open mod page");
@@ -552,6 +559,19 @@ component ModRow inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 colorize: item.source == 1 ? Theme.nexus : item.source == 2 ? Theme.thunderstore : Theme.faint;
                 opacity: item.enabled ? (item.source == 0 ? 0.7 : 0.85) : 0.4;
+            }
+            if item.missing != "": Text {
+                text: @tr("needs {}", item.missing);
+                color: deps-ta.has-hover ? Theme.text : Theme.warn;
+                font-size: 11px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+                max-width: min(self.preferred-width, 260px);
+                deps-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.get-deps(); }
+                }
             }
             Rectangle { horizontal-stretch: 1; }
         }
@@ -1130,6 +1150,9 @@ export component AppWindow inherits Window {
     callback check-updates();
     callback update-mod(string);
     callback update-all();
+    callback get-deps(string);
+    callback deps-found(int, string);
+    callback deps-prompt(int, string, string);
     callback nxm-received(string);
     callback open-panel();
     callback clear-notices();
@@ -1494,6 +1517,7 @@ export component AppWindow inherits Window {
                         open-folder => { root.open-mod-folder(m.id); }
                         properties => { root.show-properties(m.id); }
                         update => { root.update-mod(m.id); }
+                        get-deps => { root.get-deps(m.id); }
                     }
                     if root.mods.length == 0 && root.current >= 0: Text {
                         text: root.filter != "" ? @tr("No mod with that name.")

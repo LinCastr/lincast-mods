@@ -218,3 +218,9 @@ msgstr "Cancelar"
 
 msgid "Update all ({})"
 msgstr "Atualizar todos ({})"
+
+msgid "Download missing dependencies"
+msgstr "Baixar dependências que faltam"
+
+msgid "needs {}"
+msgstr "precisa de {}"

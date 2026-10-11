@@ -3,6 +3,7 @@
 mod i18n;
 mod browse;
 mod config;
+mod deps;
 mod desktop;
 mod games;
 mod gui;
@@ -35,6 +36,7 @@ const USAGE: &str = "usage:
   linex-mods loader <game> melonloader|bepinex
   linex-mods search <game> nexus|ts [words]
                                   search mods on the Nexus or Thunderstore
+  linex-mods deps <game>          list missing dependencies (SMAPI)
   linex-mods others               list Heroic and Lutris games (detection only for now)
   linex-mods updates <game>       check the game's Nexus mods for new versions
   linex-mods ts install <game> <package>
@@ -159,6 +161,24 @@ fn run(args: &[String]) -> Result<()> {
                     browse::Match::None => String::new(),
                 };
                 println!("{:>9}  {} {} — {}{state}", l.downloads, l.name, l.version, l.author);
+            }
+        }
+        ("deps", [q]) => {
+            let g = game(q)?;
+            let mut list: Vec<_> = deps::smapi_missing(&g).into_iter().collect();
+            list.sort_by(|a, b| a.0.cmp(&b.0));
+            if list.is_empty() {
+                println!("{}", tr!("No missing dependencies.", "Nenhuma dependência faltando."));
+            }
+            for (m, missing) in list {
+                let names: Vec<String> = missing
+                    .iter()
+                    .map(|d| match d.nexus_id {
+                        Some(id) => format!("{} ({})", d.name, nexus::mod_page(&g.nexus_domain(), id)),
+                        None => d.name.clone(),
+                    })
+                    .collect();
+                println!("{m}: {}", names.join(", "));
             }
         }
         ("others", []) => {

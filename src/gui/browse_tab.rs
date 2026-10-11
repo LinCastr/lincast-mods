@@ -19,6 +19,8 @@ pub struct Result {
 #[derive(Debug, Clone)]
 pub enum Pending {
     OpenPage(String),
+    /// Download pages of missing dependencies.
+    OpenPages(Vec<String>),
     Install(crate::thunderstore::PackageRef),
 }
 
@@ -260,7 +262,7 @@ fn start_install(ui: &AppWindow, state: &State, pkg: crate::thunderstore::Packag
     install_package(ui, pkg, Some(game), state.games.clone());
 }
 
-fn confirm(ui: &AppWindow, state: &mut State, title: &str, text: &str, button: &str, action: Pending) {
+pub fn confirm(ui: &AppWindow, state: &mut State, title: &str, text: &str, button: &str, action: Pending) {
     state.pending = Some(action);
     ui.set_confirm_title(title.into());
     ui.set_confirm_text(text.into());
@@ -273,6 +275,12 @@ pub fn confirm_accept(ui: &AppWindow, state: &mut State) {
         Some(Pending::OpenPage(url)) => {
             open(&url);
             set_msg(ui, tr!("On the page, click \"Mod Manager Download\": the mod comes back here and installs.", "Na página, clique em \"Mod Manager Download\": o mod volta para cá e instala."), false);
+        }
+        Some(Pending::OpenPages(urls)) => {
+            for u in &urls {
+                open(u);
+            }
+            set_msg(ui, tr!("On each page, click \"Mod Manager Download\": they come back here and install.", "Em cada página, clique em \"Mod Manager Download\": eles voltam para cá e instalam."), false);
         }
         Some(Pending::Install(pkg)) => {
             if let Some(game) = state.game().cloned() {
