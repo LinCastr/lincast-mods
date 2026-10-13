@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/linex-mods.svg" width="104" alt="linex-mods logo">
+<img src="assets/lincast-mods.svg" width="104" alt="lincast-mods logo">
 
-# linex-mods
+# lincast-mods
 
 **A native Linux mod manager for Steam games.**<br>
 Vibecoded, works like Vortex, exists because I'm lazy to mod on Linux.
@@ -13,14 +13,14 @@ Vibecoded, works like Vortex, exists because I'm lazy to mod on Linux.
 ![License](https://img.shields.io/badge/license-GPL--3.0-4d8eff?style=flat-square)
 ![Status](https://img.shields.io/badge/status-early%20but%20usable-e0b04a?style=flat-square)
 
-<img src="docs/screenshots/main.png" alt="linex-mods showing Stardew Valley mods" width="860">
+<img src="docs/screenshots/main.png" alt="lincast-mods showing Stardew Valley mods" width="860">
 
 </div>
 
 ## Why
 
 Modding a Windows game on Linux means unzipping archives, guessing which folder each file
-goes to, and then finding out Proton silently ignored the mod loader. linex-mods does the
+goes to, and then finding out Proton silently ignored the mod loader. lincast-mods does the
 boring part: it finds your Steam games, installs mods in the right place, keeps track of
 what each mod put where, and tells you when something won't load.
 
@@ -35,7 +35,7 @@ It is a small native app (Rust + Slint): about 30 MB of RAM, no browser engine i
 - Thunderstore installs in one click, with its dependencies listed first. Free Nexus
   accounts download through the site's button, which sends the file back to the app.
 - The website buttons, Nexus **"Mod Manager Download"** and Thunderstore **"Install with Mod
-  Manager"**, open straight in linex-mods.
+  Manager"**, open straight in lincast-mods.
 
 **Mods**
 - Install from `.zip`, `.7z` or `.rar` with the **Add mod** button or by **dragging files**
@@ -72,7 +72,7 @@ It is a small native app (Rust + Slint): about 30 MB of RAM, no browser engine i
 - English and Brazilian Portuguese, following the system language.
 
 <div align="center">
-<img src="docs/screenshots/wallust.png" alt="linex-mods with wallpaper colors" width="720">
+<img src="docs/screenshots/wallust.png" alt="lincast-mods with wallpaper colors" width="720">
 <br><sub>Wallpaper colors (wallust) on Megabonk with BepInEx mods.</sub>
 </div>
 
@@ -87,7 +87,7 @@ Any Steam game (native or Flatpak Steam, every library folder) that has, or can 
 | BepInEx | Unity games (Mono and IL2CPP) | yes |
 
 Games that run through Proton need the loader DLL to be loaded from the game folder
-(`WINEDLLOVERRIDES="winhttp=n,b"` for BepInEx, `version=n,b` for MelonLoader). linex-mods
+(`WINEDLLOVERRIDES="winhttp=n,b"` for BepInEx, `version=n,b` for MelonLoader). lincast-mods
 checks for it and gives you the exact launch option.
 
 ## Install
@@ -95,13 +95,13 @@ checks for it and gives you the exact launch option.
 No releases yet, so build it:
 
 ```sh
-git clone https://github.com/Valcones47/linex-mods
-cd linex-mods
+git clone https://github.com/Valcones47/lincast-mods
+cd lincast-mods
 cargo build --release
-./target/release/linex-mods
+./target/release/lincast-mods
 ```
 
-The first run adds linex-mods to your applications menu. To use the Nexus button, open
+The first run adds lincast-mods to your applications menu. To use the Nexus button, open
 **Settings**, paste your API key (nexusmods.com → Settings → API Keys) and turn on
 **website links**. The key is stored in the system keyring.
 
@@ -111,19 +111,19 @@ copying launch options.
 ## Command line
 
 ```
-linex-mods                      open the window
-linex-mods games                list games with a mod loader
-linex-mods mods <game>          list a game's mods
-linex-mods install <game> <file>...
-linex-mods enable|disable|remove <game> <mod>
-linex-mods unity                list Unity games without a loader
-linex-mods loader <game> melonloader|bepinex
-linex-mods updates <game>       check Nexus mods for new versions
-linex-mods search <game> nexus|ts [words]
-linex-mods deps <game>          missing dependencies (SMAPI)
-linex-mods r2modman [import <game> [profile]]
-linex-mods others               list Heroic and Lutris games (detection only for now)
-linex-mods ts install <game> <package>
+lincast-mods                      open the window
+lincast-mods games                list games with a mod loader
+lincast-mods mods <game>          list a game's mods
+lincast-mods install <game> <file>...
+lincast-mods enable|disable|remove <game> <mod>
+lincast-mods unity                list Unity games without a loader
+lincast-mods loader <game> melonloader|bepinex
+lincast-mods updates <game>       check Nexus mods for new versions
+lincast-mods search <game> nexus|ts [words]
+lincast-mods deps <game>          missing dependencies (SMAPI)
+lincast-mods r2modman [import <game> [profile]]
+lincast-mods others               list Heroic and Lutris games (detection only for now)
+lincast-mods ts install <game> <package>
                                 Thunderstore package + dependencies
                                 (Owner-Name[-1.2.3], a thunderstore.io page or ror2mm:// link)
 ```
@@ -133,7 +133,7 @@ linex-mods ts install <game> <package>
 ## Roadmap
 
 - Nexus collections.
-- Heroic and Lutris games: detection is done (`linex-mods others`); installing mods in them
+- Heroic and Lutris games: detection is done (`lincast-mods others`); installing mods in them
   is next.
 
 ## Credits
